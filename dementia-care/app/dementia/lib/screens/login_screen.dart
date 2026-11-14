@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import '../services/auth_service.dart';
 
-// >>> Correct paths to the real screens <<<
+
 import '../features/patients/screens/patient_home_screen.dart';
 import '../caregiver/caregiver_home.dart';
 
@@ -47,6 +47,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         MaterialPageRoute(builder: (_) => const PatientHomeScreen()),
       );
     } else {
+      // Caregiver redirect (Now fully enabled since we have the file!)
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const CaregiverHome()),
@@ -57,6 +58,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
+    
     try {
       final result = await _authService.signInWithEmail(
         _emailController.text.trim(),
@@ -65,9 +67,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       if (!mounted) return;
       _redirectByRole(result['role'] as String);
     } catch (e) {
+      print('🚨 LOGIN CAUGHT ERROR: $e');
       _showError(e.toString());
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false); // ALWAYS turns off spinner
     }
   }
 
@@ -77,7 +80,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       _showError('Passwords do not match');
       return;
     }
+    
     setState(() => _isLoading = true);
+
     try {
       final result = await _authService.signUpWithEmail(
         _emailController.text.trim(),
@@ -87,9 +92,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       if (!mounted) return;
       _redirectByRole(result['role'] as String);
     } catch (e) {
+      print('🚨 REGISTER CAUGHT ERROR: $e');
       _showError(e.toString());
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false); // ALWAYS turns off spinner
     }
   }
 
@@ -151,6 +157,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     tabs: const [Tab(text: 'Login'), Tab(text: 'Register')],
                   ),
                   const SizedBox(height: 24),
+                  
+                  // Email Field
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -159,10 +167,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.email),
                     ),
-                    validator: (v) =>
-                        (v == null || v.isEmpty) ? 'Required' : (!v.contains('@') ? 'Invalid email' : null),
+                    validator: (v) => (v == null || v.isEmpty) ? 'Required' : (!v.contains('@') ? 'Invalid email' : null),
                   ),
                   const SizedBox(height: 16),
+                  
+                  // Password Field
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
@@ -171,9 +180,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.lock),
                     ),
-                    validator: (v) =>
-                        (v == null || v.isEmpty) ? 'Required' : (v.length < 6 ? 'Min 6 chars' : null),
+                    validator: (v) => (v == null || v.isEmpty) ? 'Required' : (v.length < 6 ? 'Min 6 chars' : null),
                   ),
+                  
+                  // Register-only fields
                   if (isRegister) ...[
                     const SizedBox(height: 16),
                     TextFormField(
@@ -196,11 +206,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       ),
                       items: const [
                         DropdownMenuItem(value: 'patient', child: Text('Patient')),
-                        DropdownMenuItem(value: 'caregiver', child: Text('Caregiver / Family')),
+                        // Caregiver is paused, but kept in UI if you want to test the fallback
+                        DropdownMenuItem(value: 'caregiver', child: Text('Caregiver / Family')), 
                       ],
                       onChanged: (v) => setState(() => _selectedRole = v!),
                     ),
                   ],
+                  
+                  // Login-only field
                   if (!isRegister) ...[
                     Align(
                       alignment: Alignment.centerRight,
@@ -210,7 +223,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       ),
                     ),
                   ],
+                  
                   const SizedBox(height: 24),
+                  
+                  // Submit Button
                   ElevatedButton(
                     onPressed: _isLoading ? null : (isRegister ? _handleRegister : _handleLogin),
                     style: ElevatedButton.styleFrom(
@@ -224,8 +240,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             width: 20,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : Text(isRegister ? 'Create Account' : 'Login',
-                            style: const TextStyle(fontSize: 16)),
+                        : Text(isRegister ? 'Create Account' : 'Login', style: const TextStyle(fontSize: 16)),
                   ),
                 ],
               ),
