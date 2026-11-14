@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:material_ui/material_ui.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class PairingCodeScreen extends StatefulWidget {
   final bool isHindi;
@@ -11,20 +13,24 @@ class PairingCodeScreen extends StatefulWidget {
 }
 
 class _PairingCodeScreenState extends State<PairingCodeScreen> {
-  String _pairingCode = '482-910';
+  String _pairingCode = '--- ---';
   bool _isLoading = false;
+  bool _linked = false;
   int _secondsRemaining = 600; // 10 minutes
   Timer? _countdownTimer;
+  StreamSubscription<QuerySnapshot>? _requestSubscription;
 
   @override
   void initState() {
     super.initState();
+    _generateCode();
     _startCountdown();
   }
 
   @override
   void dispose() {
     _countdownTimer?.cancel();
+    _requestSubscription?.cancel();
     super.dispose();
   }
 
@@ -33,12 +39,14 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
   void _startCountdown() {
     _countdownTimer?.cancel();
     _secondsRemaining = 600;
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       if (!mounted) return;
       if (_secondsRemaining > 0) {
         setState(() => _secondsRemaining--);
       } else {
         timer.cancel();
+        _requestSubscription?.cancel();
+        await _retireCurrentCode('expired'); // stop the code from working
       }
     });
   }
@@ -49,26 +57,93 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
     return '$mins:$secs';
   }
 
-  Future<void> _refreshCode() async {
+  /// Generates a 6-digit code locally and records it in Firestore so the
+  /// caregiver side can validate it ('not-found', 'expired', 'used').
+  Future<void> _generateCode() async {
     setState(() => _isLoading = true);
-    // TODO: Call FirebaseFunctions.instance.httpsCallable('create_pairing_code')
-    await Future.delayed(const Duration(milliseconds: 500));
+
+    final rand = Random.secure();
+    final digits = List.generate(6, (_) => rand.nextInt(10)).join();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    if (uid != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('pairing_codes')
+            .doc(digits)
+            .set({
+          'uid': uid,
+          'status': 'active',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      } catch (_) {
+        // Offline: the code still shows, but the caregiver will get
+        // 'not-found' — acceptable degradation for a pairing flow.
+      }
+    }
+
     if (!mounted) return;
-
-    final rand = Random();
-    final p1 = (100 + rand.nextInt(900)).toString();
-    final p2 = (100 + rand.nextInt(900)).toString();
-
     setState(() {
-      _pairingCode = '$p1-$p2';
+      _pairingCode = '${digits.substring(0, 3)}-${digits.substring(3)}';
       _isLoading = false;
+      _linked = false;
     });
+    _listenForPairingRequests(digits);
+  }
+
+  /// Watches for a caregiver request doc carrying this exact code and
+  /// approves it while the timer is still running.
+  void _listenForPairingRequests(String cleanCode) {
+    _requestSubscription?.cancel();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    _requestSubscription = FirebaseFirestore.instance
+        .collection('pairing_requests')
+        .where('code', isEqualTo: cleanCode)
+        .where('status', isEqualTo: 'pending')
+        .snapshots()
+        .listen((snapshot) async {
+      if (_secondsRemaining <= 0) return; // never approve an expired code
+
+      for (final doc in snapshot.docs) {
+        await doc.reference.update({
+          'status': 'approved',
+          'pid': uid,
+          'patientName': _patientName, // see note below
+        });
+        await _retireCurrentCode('used');
+        _requestSubscription?.cancel();
+        _countdownTimer?.cancel();
+        if (mounted) setState(() => _linked = true);
+      }
+    });
+  }
+
+  Future<void> _retireCurrentCode(String status) async {
+    final clean = _pairingCode.replaceAll(RegExp(r'\D'), '');
+    if (clean.length != 6) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('pairing_codes')
+          .doc(clean)
+          .update({'status': status});
+    } catch (_) {}
+  }
+
+  // TODO: replace with the real name from your user profile / auth state.
+  String get _patientName => 'Patient';
+
+  Future<void> _refreshCode() async {
+    _requestSubscription?.cancel();
+    await _retireCurrentCode('expired');
     _startCountdown();
+    await _generateCode();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isExpired = _secondsRemaining == 0;
+    final isExpired = _secondsRemaining == 0 && !_linked;
 
     return Scaffold(
       backgroundColor: const Color(0xFF121619),
@@ -82,65 +157,85 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              _t(
-                'Ask your caregiver to enter this 6-digit code on their phone:',
-                'अपने देखभालकर्ता से यह 6-अंकों का कोड उनके फ़ोन पर डालने के लिए कहें:',
-              ),
-              style: const TextStyle(fontSize: 22, color: Colors.white),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 28),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.blueGrey.shade900,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: isExpired ? Colors.amberAccent : Colors.tealAccent,
-                  width: 2,
+            if (_linked)
+              Text(
+                _t('Caregiver linked successfully!', 'देखभालकर्ता सफलतापूर्वक जुड़ गए!'),
+                style: const TextStyle(
+                    fontSize: 26, fontWeight: FontWeight.bold, color: Colors.tealAccent),
+                textAlign: TextAlign.center,
+              )
+            else ...[
+              Text(
+                _t(
+                  'Ask your caregiver to enter this 6-digit code on their phone:',
+                  'अपने देखभालकर्ता से यह 6-अंकों का कोड उनके फ़ोन पर डालने के लिए कहें:',
                 ),
+                style: const TextStyle(fontSize: 22, color: Colors.white),
+                textAlign: TextAlign.center,
               ),
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: Colors.tealAccent))
-                  : Column(
-                      children: [
-                        Text(
-                          isExpired ? _t('EXPIRED', 'समय समाप्त') : _pairingCode,
-                          style: TextStyle(
-                            fontSize: 46,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 6,
-                            color: isExpired ? Colors.amberAccent : Colors.tealAccent,
+              const SizedBox(height: 28),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.blueGrey.shade900,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isExpired ? Colors.amberAccent : Colors.tealAccent,
+                    width: 2,
+                  ),
+                ),
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: Colors.tealAccent))
+                    : Column(
+                        children: [
+                          Text(
+                            isExpired ? _t('EXPIRED', 'समय समाप्त') : _pairingCode,
+                            style: TextStyle(
+                              fontSize: 46,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 6,
+                              color: isExpired
+                                  ? Colors.amberAccent
+                                  : Colors.tealAccent,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          isExpired
-                              ? _t('Tap below for a new code', 'नए कोड के लिए नीचे दबाएँ')
-                              : _t('Expires in $_formattedTimer', '$_formattedTimer में समाप्त होगा'),
-                          style: const TextStyle(fontSize: 18, color: Colors.white70),
-                        ),
-                      ],
-                    ),
-            ),
-            const SizedBox(height: 32),
-            SizedBox(
-              height: 68,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal.shade700,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                onPressed: _isLoading ? null : _refreshCode,
-                icon: const Icon(Icons.refresh, size: 32, color: Colors.white),
-                label: Text(
-                  _t('Generate New Code', 'नया कोड बनाएँ'),
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                          const SizedBox(height: 12),
+                          Text(
+                            isExpired
+                                ? _t('Tap below for a new code',
+                                    'नए कोड के लिए नीचे दबाएँ')
+                                : _t('Expires in $_formattedTimer',
+                                    '$_formattedTimer में समाप्त होगा'),
+                            style: const TextStyle(
+                                fontSize: 18, color: Colors.white70),
+                          ),
+                        ],
+                      ),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                height: 68,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal.shade700,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: _isLoading ? null : _refreshCode,
+                  icon: const Icon(Icons.refresh, size: 32, color: Colors.white),
+                  label: Text(
+                    _t('Generate New Code', 'नया कोड बनाएँ'),
+                    style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white),
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),

@@ -1,15 +1,13 @@
-// app/lib/caregiver/pairing/pairing_screen.dart
 import 'dart:async';
-
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-
 import '../common.dart';
 import '../dashboard/dashboard_screen.dart';
 import 'link_request.dart';
 
 class PairingScreen extends StatefulWidget {
   const PairingScreen({super.key});
+
   @override
   State<PairingScreen> createState() => _PairingScreenState();
 }
@@ -25,7 +23,6 @@ class _PairingScreenState extends State<PairingScreen> {
     super.dispose();
   }
 
-  /// Kind, plain messages for each failure.
   String _friendly(LinkError e) {
     switch (e.code) {
       case 'not-found':

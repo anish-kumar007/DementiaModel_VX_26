@@ -1,13 +1,10 @@
-// app/lib/caregiver/pairing/link_request.dart
-// The ONLY place that talks to B's request helper (replaces cloud_functions).
-// B's helper writes a request doc, listens for the answer and times out after
-// 10 s for pairing. Wire it in at the marked line once B's helper is pushed.
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-/// Thrown for a clear failure answer. code is one of:
-/// 'not-found', 'expired', 'used', 'locked', 'denied'.
 class LinkError implements Exception {
   LinkError(this.code);
-  final String code;
+  final String code; // 'not-found' | 'expired' | 'used' | 'locked' | 'denied'
 }
 
 class LinkResult {
@@ -16,13 +13,60 @@ class LinkResult {
   final String? name;
 }
 
-/// Sends the 6-digit code and returns the linked patient.
-/// Must throw LinkError for a refused code, and TimeoutException after 10 s.
 Future<LinkResult> requestLink(String code) async {
-  // TODO(B's helper): replace this block with the real call, for example:
-  //   final answer = await requestAndWait('link_with_code', {'code': code},
-  //       timeout: const Duration(seconds: 10));
-  //   if (answer['error'] != null) throw LinkError(answer['error'] as String);
-  //   return LinkResult(answer['pid'] as String, answer['name'] as String?);
-  throw UnimplementedError('Connect B\'s request helper in link_request.dart');
+  final fs = FirebaseFirestore.instance;
+  final clean = code.replaceAll(RegExp(r'\D'), '');
+  if (clean.length != 6) throw LinkError('not-found');
+
+  final caregiverUid = FirebaseAuth.instance.currentUser?.uid;
+  if (caregiverUid == null) throw LinkError('denied');
+
+  // 1. Validate against the doc the patient wrote in pairing_codes/{digits}
+  final codeSnap = await fs.collection('pairing_codes').doc(clean).get();
+  if (!codeSnap.exists) throw LinkError('not-found');
+  
+  final status = codeSnap.data()?['status'] as String?;
+  if (status == 'used') throw LinkError('used');
+  if (status == 'expired') throw LinkError('expired');
+  if (status != 'active') throw LinkError('not-found');
+
+  // 2. Write request doc; patient screen flips it to 'approved' (10 s timeout)
+  final reqRef = fs.collection('pairing_requests').doc();
+  try {
+    await reqRef.set({
+      'code': clean,
+      'caregiverUid': caregiverUid,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    final answer = await reqRef.snapshots()
+        .firstWhere((s) => (s.data()?['status'] ?? 'pending') != 'pending')
+        .timeout(const Duration(seconds: 10));
+
+    final data = answer.data()!;
+    
+    if (data['status'] == 'approved') {
+      final pid = data['pid'] as String;
+      final patientName = data['patientName'] as String?;
+
+      // 🔑 CRITICAL FIX: Add this caregiver to the patient's 'caregivers' array.
+      // This is exactly what PatientListScreen queries to build the list!
+      await fs.collection('patients').doc(pid).update({
+        'caregivers': FieldValue.arrayUnion([caregiverUid]),
+      });
+
+      return LinkResult(pid, patientName);
+    }
+    
+    if (data['status'] == 'denied') throw LinkError('denied');
+    throw LinkError('not-found');
+    
+  } on TimeoutException {
+    await reqRef.delete().catchError((_) {});
+    rethrow;
+  } catch (e) {
+    if (e is! LinkError) await reqRef.delete().catchError((_) {});
+    rethrow;
+  }
 }
