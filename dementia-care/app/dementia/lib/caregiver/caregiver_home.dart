@@ -8,7 +8,7 @@ import 'patients/patient_list_screen.dart';
 import 'push/push_handler.dart';
 
 class CaregiverHome extends StatefulWidget {
-  const CaregiverHome({super.key});
+  const CaregiverHome({Key? key}) : super(key: key);
   @override
   State<CaregiverHome> createState() => _CaregiverHomeState();
 }
