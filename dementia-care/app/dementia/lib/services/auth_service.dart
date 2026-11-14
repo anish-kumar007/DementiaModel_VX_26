@@ -1,62 +1,81 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'hash_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final HashService _hashService = HashService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Get current user
   User? get currentUser => _auth.currentUser;
 
-  // Sign In with Email and Password
-  Future<User?> signInWithEmail(String email, String password) async {
+  // 1. Sign In & Fetch Role
+  Future<Map<String, dynamic>> signInWithEmail(String email, String password) async {
     try {
       UserCredential userCredential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
-      return userCredential.user;
+      
+      // Fetch user role from Firestore
+      DocumentSnapshot userDoc = await _firestore.collection('users').doc(userCredential.user!.uid).get();
+      
+      if (userDoc.exists) {
+        return {
+          'user': userCredential.user,
+          'role': userDoc['role'], // 'patient' or 'caregiver'
+        };
+      } else {
+        throw Exception('User profile not found. Please contact support.');
+      }
     } on FirebaseAuthException catch (e) {
       throw Exception(_getErrorMessage(e.code));
     }
   }
 
-  // Sign Up with Email and Password
-  Future<User?> signUpWithEmail(String email, String password) async {
+  // 2. Sign Up with Role
+  Future<Map<String, dynamic>> signUpWithEmail(String email, String password, String role) async {
     try {
-      // Optional: Hash password before sending if needed by your backend logic
-      // String hashedPassword = await _hashService.hashPassword(password);
-      
       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
-      return userCredential.user;
+
+      // Save user role to Firestore
+      await _firestore.collection('users').doc(userCredential.user!.uid).set({
+        'email': email,
+        'role': role,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      return {
+        'user': userCredential.user,
+        'role': role,
+      };
     } on FirebaseAuthException catch (e) {
       throw Exception(_getErrorMessage(e.code));
     }
   }
 
-  // Sign Out
+  // 3. Forgot Password
+  Future<void> resetPassword(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_getErrorMessage(e.code));
+    }
+  }
+
   Future<void> signOut() async {
     await _auth.signOut();
   }
 
-  // Helper to get user-friendly error messages
   String _getErrorMessage(String code) {
     switch (code) {
-      case 'user-not-found':
-        return 'No user found for that email.';
-      case 'wrong-password':
-        return 'Wrong password provided.';
-      case 'email-already-in-use':
-        return 'The account already exists for that email.';
-      case 'invalid-email':
-        return 'Invalid email address.';
-      case 'weak-password':
-        return 'Password is too weak.';
-      default:
-        return 'An error occurred. Please try again.';
+      case 'user-not-found': return 'No user found for that email.';
+      case 'wrong-password': return 'Wrong password provided.';
+      case 'email-already-in-use': return 'This email is already registered.';
+      case 'invalid-email': return 'Invalid email address.';
+      case 'weak-password': return 'Password should be at least 6 characters.';
+      default: return 'An error occurred. Please try again.';
     }
   }
 }

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "956578485847",
+    "project_id": "dementiacare-vx-7de5c",
+    "storage_bucket": "dementiacare-vx-7de5c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:956578485847:android:6960dd5ccde3763dca3512",
+        "android_client_info": {
+          "package_name": "com.example.dementia"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "956578485847-e26lhhd9mtstsbf18rjbq1tmsus77e2p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZWuavZRGFclR5TWqlfe10wde25r9-N2g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "956578485847-e26lhhd9mtstsbf18rjbq1tmsus77e2p.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
