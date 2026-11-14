@@ -1,9 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../services/auth_service.dart';
 
 // >>> Correct paths to the real screens <<<
 import '../features/patients/screens/patient_home_screen.dart';
-import '../caregiver/caregiver_home.dart';
+//import '../caregiver/caregiver_home.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -45,13 +45,13 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const PatientHomeScreen()),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const CaregiverHome()),
-      );
-    }
+      );}
+    // else {
+    //   Navigator.pushReplacement(
+    //     context,
+    //     MaterialPageRoute(builder: (_) => const CaregiverHome()),
+    //   );
+    // }
   }
 
   Future<void> _handleLogin() async {
@@ -71,13 +71,15 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     }
   }
 
-  Future<void> _handleRegister() async {
+    Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
     if (_passwordController.text != _confirmPasswordController.text) {
       _showError('Passwords do not match');
       return;
     }
-    setState(() => _isLoading = true);
+    
+    setState(() => _isLoading = true); // Spinner ON
+
     try {
       final result = await _authService.signUpWithEmail(
         _emailController.text.trim(),
@@ -87,9 +89,12 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       if (!mounted) return;
       _redirectByRole(result['role'] as String);
     } catch (e) {
+      print('🚨 REGISTER CAUGHT ERROR: $e'); // DEBUG
       _showError(e.toString());
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false); // Spinner ALWAYS OFF
+      }
     }
   }
 
