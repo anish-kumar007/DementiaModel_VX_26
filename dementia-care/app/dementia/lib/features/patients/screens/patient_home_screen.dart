@@ -1,8 +1,8 @@
+import 'dart:async';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
-import '../../../core/constants.dart';
-import '../widgets/large_action_card.dart';
-import '../widgets/sos_emergency_button.dart';
 import '../services/sos_service.dart';
 import '../services/location_service.dart';
 import 'game1_screen.dart';
@@ -22,15 +22,64 @@ class PatientHomeScreen extends StatefulWidget {
 
 class _PatientHomeScreenState extends State<PatientHomeScreen> {
   bool _isSendingSos = false;
+  bool _isHindi = false;
+  late Timer _clockTimer;
+  DateTime _now = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    // Initialize location & battery exemption flow on startup
     LocationService.initializeLocationAndBatteryExemption();
+    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
   }
 
-  Future<void> _handleSosPress() async {
+  @override
+  void dispose() {
+    _clockTimer.cancel();
+    super.dispose();
+  }
+
+  String _t(String en, String hi) => _isHindi ? hi : en;
+
+  Future<void> _confirmAndTriggerSos() async {
+    HapticFeedback.heavyImpact();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E242B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          _t('Send Emergency SOS?', 'क्या आपातकालीन SOS भेजें?'),
+          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        content: Text(
+          _t(
+            'This will immediately alert your caregiver with your location.',
+            'यह तुरंत आपके देखभालकर्ता को आपकी लोकेशन के साथ सूचित करेगा।',
+          ),
+          style: const TextStyle(fontSize: 20, color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(_t('Cancel', 'रद्द करें'), style: const TextStyle(fontSize: 20, color: Colors.white70)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(_t('SEND SOS', 'SOS भेजें'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     setState(() => _isSendingSos = true);
     final triggered = await SosService.triggerEmergencySos();
 
@@ -41,12 +90,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
       SnackBar(
         content: Text(
           triggered
-              ? 'Emergency SOS triggered! Opening SMS fallback...'
-              : 'Could not send SOS. Please call your caregiver.',
-
+              ? _t('Emergency SOS sent! Opening SMS backup...', 'आपातकालीन SOS भेजा गया! SMS खुल रहा है...')
+              : _t('Could not send SOS. Please call your caregiver.', 'SOS नहीं भेजा जा सका। कृपया देखभालकर्ता को कॉल करें।'),
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: triggered ? Colors.orange.shade800 : Colors.red.shade900,
+        backgroundColor: Colors.amber.shade900,
         duration: const Duration(seconds: 4),
       ),
     );
@@ -55,7 +103,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   void _openGameSelector() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
+      backgroundColor: const Color(0xFF1E242B),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -65,34 +113,48 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Choose a Game',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+            Text(
+              _t('Choose an Activity', 'एक गतिविधि चुनें'),
+              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryCardColor,
-                padding: const EdgeInsets.symmetric(vertical: 20),
+            SizedBox(
+              height: 68,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal.shade700,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const Game1Screen()));
+                },
+                icon: const Icon(Icons.image_search, size: 32, color: Colors.white),
+                label: Text(
+                  _t('Word & Picture Match', 'शब्द और चित्र मिलान'),
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
               ),
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const Game1Screen()));
-              },
-              child: const Text('Game 1: Memory Match', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.secondaryCardColor,
-                padding: const EdgeInsets.symmetric(vertical: 20),
+            SizedBox(
+              height: 68,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.indigo.shade600,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const Game2Screen()));
+                },
+                icon: const Icon(Icons.menu_book, size: 32, color: Colors.white),
+                label: Text(
+                  _t('Short Story Recall', 'कहानी और प्रश्न'),
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
               ),
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const Game2Screen()));
-              },
-              child: const Text('Game 2: Story & Word Recall', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -102,84 +164,128 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final timeStr = DateFormat('hh:mm a').format(_now);
+    final dateStr = DateFormat('EEEE, d MMM').format(_now);
+
     return Scaffold(
+      backgroundColor: const Color(0xFF121619),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.all(18.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                AppConstants.appTitle,
-                style: Theme.of(context).textTheme.headlineLarge,
-                textAlign: TextAlign.center,
+              // Top bar: Language toggle + Caregiver/Safe Zone utility icons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.tealAccent,
+                      side: const BorderSide(color: Colors.tealAccent),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                    onPressed: () => setState(() => _isHindi = !_isHindi),
+                    icon: const Icon(Icons.translate, size: 22),
+                    label: Text(
+                      _isHindi ? 'English' : 'हिन्दी',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      IconButton(
+                        tooltip: _t('Safe Zone', 'सुरक्षित क्षेत्र'),
+                        icon: const Icon(Icons.shield_outlined, size: 32, color: Colors.tealAccent),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => ConsentAndGeofenceScreen(isHindi: _isHindi)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: _t('Link Caregiver', 'देखभालकर्ता जोड़ें'),
+                        icon: const Icon(Icons.link, size: 32, color: Colors.tealAccent),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => PairingCodeScreen(isHindi: _isHindi)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: LargeActionCard(
-                  title: AppConstants.playGamesLabel,
-                  icon: Icons.extension,
-                  color: AppTheme.primaryCardColor,
-                  onTap: _openGameSelector,
+              const SizedBox(height: 8),
+
+              // Large Clock & Date Header
+              Center(
+                child: Column(
+                  children: [
+                    Text(
+                      timeStr,
+                      style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    Text(
+                      dateStr,
+                      style: const TextStyle(fontSize: 20, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Next Reminder Banner (Tap to open Reminders)
+              InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => PatientRemindersScreen(isHindi: _isHindi)),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.amberAccent.withOpacity(0.6)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.notifications_active, color: Colors.amberAccent, size: 30),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _t('Next: 01:30 PM • Lunch & Water', 'अगला: 01:30 PM • दोपहर का भोजन और पानी'),
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 14),
+
+              // 4 Calm Huge Action Buttons (Play, Call Family, Voice Help, Reminders)
               Expanded(
                 child: Row(
                   children: [
                     Expanded(
-                      child: LargeActionCard(
-                        title: AppConstants.safeZoneLabel,
-                        icon: Icons.location_on,
-                        color: AppTheme.statusCardColor,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ConsentAndGeofenceScreen()));
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 14),                 
-                    Expanded(
-                      child: LargeActionCard(
-                        title: AppConstants.pairDeviceLabel,
-                        icon: Icons.link,
-                        color: AppTheme.pairingCardColor,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const PairingCodeScreen()),
-                          );
-                        },
-                      ),
-                    ),
-              Expanded( 
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: LargeActionCard(
-                        title: 'Reminders',
-                        icon: Icons.alarm,
-                        color: Colors.amber.shade800,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const PatientRemindersScreen()),
-                          );
-                        },
+                      child: _HugeTileButton(
+                        title: _t('Play', 'खेलें'),
+                        icon: Icons.extension,
+                        color: Colors.teal.shade800,
+                        onTap: _openGameSelector,
                       ),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
-                      child: LargeActionCard(
-                        title: 'Voice Help',
-                        icon: Icons.mic,
-                        color: Colors.indigo.shade700,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const VoiceAssistantScreen()),
-                          );
-                        },
+                      child: _HugeTileButton(
+                        title: _t('Call Family', 'परिवार को कॉल'),
+                        icon: Icons.call,
+                        color: Colors.blue.shade800,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => PatientContactsScreen(isHindi: _isHindi)),
+                        ),
                       ),
                     ),
                   ],
@@ -187,28 +293,104 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
               ),
               const SizedBox(height: 14),
               Expanded(
-                child: LargeActionCard(
-                  title: 'Important Contacts',
-                  icon: Icons.contacts,
-                  color: Colors.blueGrey.shade700,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const PatientContactsScreen()),
-                    );
-                  },
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _HugeTileButton(
+                        title: _t('Voice Help', 'आवाज़ सहायक'),
+                        icon: Icons.mic,
+                        color: Colors.indigo.shade700,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => VoiceAssistantScreen(isHindi: _isHindi)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: _HugeTileButton(
+                        title: _t('Reminders', 'रिमाइंडर'),
+                        icon: Icons.alarm,
+                        color: Colors.cyan.shade800,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => PatientRemindersScreen(isHindi: _isHindi)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 20),
-              SosEmergencyButton(
-                isSending: _isSendingSos,
-                onPressed: _handleSosPress,
+              const SizedBox(height: 16),
+
+              // 5th Huge Button: SOS (ONLY red element in the UI)
+              SizedBox(
+                height: 76,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                  ),
+                  onPressed: _isSendingSos ? null : _confirmAndTriggerSos,
+                  icon: _isSendingSos
+                      ? const SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
+                        )
+                      : const Icon(Icons.sos, size: 38, color: Colors.white),
+                  label: Text(
+                    _isSendingSos
+                        ? _t('SENDING SOS...', 'SOS भेजा जा रहा है...')
+                        : _t('EMERGENCY SOS', 'आपातकालीन SOS'),
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
               ),
             ],
           ),
         ),
-        ]),
       ),
+    );
+  }
+}
+
+class _HugeTileButton extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _HugeTileButton({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 52, color: Colors.white),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:url_launcher/url_launcher.dart';
 import '../services/voice_assistant_service.dart';
 
 class VoiceAssistantScreen extends StatefulWidget {
-  const VoiceAssistantScreen({super.key});
+  final bool isHindi;
+  const VoiceAssistantScreen({super.key, this.isHindi = false});
 
   @override
   State<VoiceAssistantScreen> createState() => _VoiceAssistantScreenState();
@@ -12,41 +15,41 @@ class VoiceAssistantScreen extends StatefulWidget {
 class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
   late stt.SpeechToText _speech;
   bool _isListening = false;
-  String _lastWords = 'Tap the microphone and ask me anything...';
-  String _aiResponse = 'I am your Care Companion assistant.';
   bool _isLoading = false;
+  String _lastWords = '';
+  String _aiResponse = '';
+
+  String _t(String en, String hi) => widget.isHindi ? hi : en;
 
   @override
   void initState() {
     super.initState();
     _speech = stt.SpeechToText();
-    _initSpeech();
+    _lastWords = _t('Tap below and speak...', 'नीचे दबाएँ और बोलें...');
+    _aiResponse = _t(
+      'Hello! Ask me about the time, your reminders, or say "Call Aarav".',
+      'नमस्ते! मुझसे समय, अपने रिमाइंडर के बारे में पूछें, या कहें "आरव को कॉल करें"।',
+    );
+    VoiceAssistantService.initialize();
   }
 
-  void _initSpeech() async {
-    bool available = await VoiceAssistantService.initialize();
-    if (!mounted) return;
-    setState(() {});
+  Future<void> _startListening() async {
+    final available = await _speech.initialize();
+    if (!available) return;
+
+    setState(() => _isListening = true);
+    _speech.listen(
+      localeId: widget.isHindi ? 'hi_IN' : 'en_IN',
+      onResult: (val) {
+        setState(() => _lastWords = val.recognizedWords);
+        if (val.finalResult && val.recognizedWords.isNotEmpty) {
+          _handleUserQuery(val.recognizedWords);
+        }
+      },
+    );
   }
 
-  void _startListening() async {
-    bool available = await _speech.initialize();
-    if (available) {
-      setState(() => _isListening = true);
-      _speech.listen(
-        onResult: (val) async {
-          setState(() {
-            _lastWords = val.recognizedWords;
-          });
-          if (val.finalResult && val.recognizedWords.isNotEmpty) {
-            _handleUserQuery(val.recognizedWords);
-          }
-        },
-      );
-    }
-  }
-
-  void _stopListening() async {
+  Future<void> _stopListening() async {
     await _speech.stop();
     setState(() => _isListening = false);
   }
@@ -57,30 +60,51 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
       _isLoading = true;
     });
 
-    final response = await VoiceAssistantService.getAiCompanionResponse(query);
+    final kindFallback = _t(
+      'I am right here with you. Would you like me to open your family contacts?',
+      'मैं यहीं आपके साथ हूँ। क्या आप चाहते हैं कि मैं आपके परिवार के नंबर खोलूँ?',
+    );
+
+    String reply;
+    try {
+      // Enforce mandatory 8-second timeout with kind fallback
+      reply = await VoiceAssistantService.getAiCompanionResponse(query)
+          .timeout(const Duration(seconds: 8), onTimeout: () => kindFallback);
+    } catch (_) {
+      reply = kindFallback;
+    }
+
+    // Handle quick call action (e.g., "call aarav" or action: call:Aarav)
+    final lower = query.toLowerCase();
+    if (lower.contains('aarav') || lower.contains('आरव') || reply.startsWith('call:')) {
+      final callUri = Uri.parse('tel:+919876543210');
+      if (await canLaunchUrl(callUri)) {
+        await launchUrl(callUri);
+      }
+    }
 
     if (!mounted) return;
     setState(() {
-      _aiResponse = response;
+      _aiResponse = reply;
       _isLoading = false;
     });
 
-    await VoiceAssistantService.speak(response);
+    await VoiceAssistantService.speak(reply);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF121619),
       appBar: AppBar(
-        title: const Text('Voice Assistant'),
-        backgroundColor: Colors.indigo.shade800,
+        title: Text(_t('Voice Assistant', 'आवाज़ सहायक')),
+        backgroundColor: Colors.indigo.shade900,
       ),
       body: Padding(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.all(22.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // AI Response Card
             Expanded(
               flex: 2,
               child: Container(
@@ -99,59 +123,48 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
                         ? const CircularProgressIndicator(color: Colors.tealAccent)
                         : Text(
                             _aiResponse,
-                            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: const TextStyle(fontSize: 23, fontWeight: FontWeight.bold, color: Colors.white),
                             textAlign: TextAlign.center,
                           ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 20),
-            // User Spoken Words Display
+            const SizedBox(height: 18),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey.shade900,
+                color: Colors.blueGrey.shade900,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Text(
-                'You said: "$_lastWords"',
+                '${_t('You said', 'आपने कहा')}: "$_lastWords"',
                 style: const TextStyle(fontSize: 18, color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
             ),
-            const SizedBox(height: 30),
-            // Microphone Button
+            const SizedBox(height: 24),
+            // Calm Teal/Amber Mic Button (No red, per theme rules)
             SizedBox(
-              height: 90,
-              child: ElevatedButton(
+              height: 84,
+              child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                backgroundColor: _isListening ? Colors.red.shade700 : Colors.teal.shade700,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                elevation: 6,
-              ),
-              onPressed: _isListening ? _stopListening : _startListening,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(_isListening ? Icons.mic : Icons.mic_none, size: 40, color: Colors.white),
-                  const SizedBox(width: 12),
-                  Text(
-                    _isListening ? 'LISTENING... (TAP TO STOP)' : 'TAP TO SPEAK',
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                ],
+                  backgroundColor: _isListening ? Colors.amber.shade900 : Colors.teal.shade700,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+                onPressed: _isListening ? _stopListening : _startListening,
+                icon: Icon(_isListening ? Icons.stop_circle : Icons.mic, size: 40, color: Colors.white),
+                label: Text(
+                  _isListening
+                      ? _t('LISTENING... TAP TO STOP', 'सुन रहा हूँ... रोकने के लिए दबाएँ')
+                      : _t('TAP TO SPEAK', 'बोलने के लिए दबाएँ'),
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
               ),
             ),
-        )],
+          ],
         ),
       ),
     );
-  }
-}
-
-extension on ButtonStyle {
-  Widget wrapElevatedButton({required VoidCallback onPressed, required Widget child}) {
-    return ElevatedButton(style: this, onPressed: onPressed, child: child);
   }
 }
