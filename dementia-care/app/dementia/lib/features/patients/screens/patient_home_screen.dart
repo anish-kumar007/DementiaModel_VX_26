@@ -1,9 +1,8 @@
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../../../core/constants.dart';
 import '../widgets/large_action_card.dart';
 import '../widgets/sos_emergency_button.dart';
-<<<<<<< HEAD
 import '../services/sos_service.dart';
 import '../services/location_service.dart';
 import 'game1_screen.dart';
@@ -40,6 +39,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
           triggered
               ? 'Emergency SOS triggered! Opening SMS fallback...'
               : 'Could not send SOS. Please call your caregiver.',
+
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         backgroundColor: triggered ? Colors.orange.shade800 : Colors.red.shade900,
@@ -97,13 +97,6 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   }
 
   @override
-=======
-
-class PatientHomeScreen extends StatelessWidget {
-  const PatientHomeScreen({super.key});
-
-  @override
->>>>>>> 084cb20efa78d2f0e13cf5c3d78826a2847ec89e
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
@@ -117,16 +110,11 @@ class PatientHomeScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.headlineLarge,
                 textAlign: TextAlign.center,
               ),
-<<<<<<< HEAD
               const SizedBox(height: 16),
-=======
-              const SizedBox(height: 20),
->>>>>>> 084cb20efa78d2f0e13cf5c3d78826a2847ec89e
               Expanded(
                 child: LargeActionCard(
                   title: AppConstants.playGamesLabel,
                   icon: Icons.extension,
-<<<<<<< HEAD
                   color: AppTheme.primaryCardColor,
                   onTap: _openGameSelector,
                 ),
@@ -166,29 +154,6 @@ class PatientHomeScreen extends StatelessWidget {
               SosEmergencyButton(
                 isSending: _isSendingSos,
                 onPressed: _handleSosPress,
-=======
-                  onTap: () {
-                    // Navigate to Game 1
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: LargeActionCard(
-                  title: AppConstants.safeZoneLabel,
-                  icon: Icons.location_on,
-                  color: AppTheme.statusCardColor,
-                  onTap: () {
-                    // Show Safe Zone / Geofencing information
-                  },
-                ),
-              ),
-              const SizedBox(height: 24),
-              SosEmergencyButton(
-                onPressed: () {
-                  // Trigger SOS emergency action
-                },
->>>>>>> 084cb20efa78d2f0e13cf5c3d78826a2847ec89e
               ),
             ],
           ),
@@ -196,8 +161,5 @@ class PatientHomeScreen extends StatelessWidget {
       ),
     );
   }
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 084cb20efa78d2f0e13cf5c3d78826a2847ec89e
+
