@@ -1,11 +1,10 @@
 import os
 from google import genai
 from google.genai import types
-from config import GEMINI_API_KEY
 
 def get_ai_client():
     """Initializes the official google-genai client with direct API key."""
-    api_key = GEMINI_API_KEY
+    api_key = os.getenv("GEMINI_API_KEY")
     
     if not api_key:
         raise ValueError("API key is required.")
