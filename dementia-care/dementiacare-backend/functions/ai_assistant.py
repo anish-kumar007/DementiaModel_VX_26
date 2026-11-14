@@ -4,9 +4,7 @@ from google.genai import types
 
 def get_ai_client():
     """Initializes the official google-genai client with direct API key."""
-    # Paste your actual Gemini API key directly here for the hackathon demo
-    api_key = "AIzaSy..." # <-- put your actual key string here
-    
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("API key is required.")
     return genai.Client(api_key=api_key)
