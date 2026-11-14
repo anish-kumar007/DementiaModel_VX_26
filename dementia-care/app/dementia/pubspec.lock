@@ -137,8 +137,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.6"
-<<<<<<< HEAD
-=======
   dart_earcut:
     dependency: transitive
     description:
@@ -155,22 +153,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.0"
->>>>>>> 084cb20efa78d2f0e13cf5c3d78826a2847ec89e
   dbus:
     dependency: transitive
     description:
       name: dbus
-<<<<<<< HEAD
       sha256: a48d5da28e89bd02196e80d81ed8d7954923d00a0f4a68cc20b575038f023383
       url: "https://pub.dev"
     source: hosted
     version: "0.7.15"
-=======
-      sha256: f7db8504e715b835f5ebe5fe74604ccd961d504c73389a5d8e81bafc2e2f3612
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.8.0"
->>>>>>> 084cb20efa78d2f0e13cf5c3d78826a2847ec89e
   eip1559:
     dependency: transitive
     description:
@@ -767,7 +757,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
-<<<<<<< HEAD
   permission_handler:
     dependency: "direct main"
     description:
@@ -816,8 +805,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.2.4"
-=======
->>>>>>> 084cb20efa78d2f0e13cf5c3d78826a2847ec89e
   petitparser:
     dependency: transitive
     description:
@@ -975,7 +962,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
-<<<<<<< HEAD
+  unicode:
+    dependency: transitive
+    description:
+      name: unicode
+      sha256: a6f7bcfc8ea1d5ce1f6c0b1c39117a9919f4953edd9fd7a64090a9796c499b57
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.9"
   url_launcher:
     dependency: "direct main"
     description:
@@ -1040,16 +1034,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.6"
-=======
-  unicode:
-    dependency: transitive
-    description:
-      name: unicode
-      sha256: a6f7bcfc8ea1d5ce1f6c0b1c39117a9919f4953edd9fd7a64090a9796c499b57
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.9"
->>>>>>> 084cb20efa78d2f0e13cf5c3d78826a2847ec89e
   uuid:
     dependency: transitive
     description:

@@ -7,61 +7,61 @@ class AuthService {
 
   User? get currentUser => _auth.currentUser;
 
-  // 1. Sign In & Fetch Role
   Future<Map<String, dynamic>> signInWithEmail(String email, String password) async {
     try {
+      print('🔑 Attempting login for: $email');
       UserCredential userCredential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
       
-      // Fetch user role from Firestore
+      print('✅ Auth successful. Fetching Firestore profile for UID: ${userCredential.user!.uid}');
       DocumentSnapshot userDoc = await _firestore.collection('users').doc(userCredential.user!.uid).get();
       
       if (userDoc.exists) {
-        return {
-          'user': userCredential.user,
-          'role': userDoc['role'], // 'patient' or 'caregiver'
-        };
+        print('✅ Profile found. Role: ${userDoc['role']}');
+        return {'user': userCredential.user, 'role': userDoc['role']};
       } else {
-        throw Exception('User profile not found. Please contact support.');
+        print('❌ Profile NOT found in Firestore.');
+        throw Exception('User profile not found. Please register again.');
       }
-    } on FirebaseAuthException catch (e) {
+    } on FirebaseException catch (e) {
+      print('🔥 FIREBASE AUTH ERROR: ${e.code} - ${e.message}');
       throw Exception(_getErrorMessage(e.code));
+    } catch (e) {
+      print('🔥 UNEXPECTED ERROR: $e');
+      throw Exception('Unexpected error: $e');
     }
   }
 
-  // 2. Sign Up with Role
   Future<Map<String, dynamic>> signUpWithEmail(String email, String password, String role) async {
     try {
+      print('📝 Attempting registration for: $email as $role');
       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      // Save user role to Firestore
+      print('✅ Auth created. Writing to Firestore...');
       await _firestore.collection('users').doc(userCredential.user!.uid).set({
         'email': email,
         'role': role,
         'createdAt': FieldValue.serverTimestamp(),
       });
+      print('✅ Firestore write successful!');
 
-      return {
-        'user': userCredential.user,
-        'role': role,
-      };
-    } on FirebaseAuthException catch (e) {
+      return {'user': userCredential.user, 'role': role};
+    } on FirebaseException catch (e) {
+      print('🔥 FIREBASE REGISTER ERROR: ${e.code} - ${e.message}');
       throw Exception(_getErrorMessage(e.code));
+    } catch (e) {
+      print('🔥 UNEXPECTED REGISTER ERROR: $e');
+      throw Exception('Registration failed: $e');
     }
   }
 
-  // 3. Forgot Password
   Future<void> resetPassword(String email) async {
-    try {
-      await _auth.sendPasswordResetEmail(email: email);
-    } on FirebaseAuthException catch (e) {
-      throw Exception(_getErrorMessage(e.code));
-    }
+    await _auth.sendPasswordResetEmail(email: email);
   }
 
   Future<void> signOut() async {
@@ -71,11 +71,12 @@ class AuthService {
   String _getErrorMessage(String code) {
     switch (code) {
       case 'user-not-found': return 'No user found for that email.';
-      case 'wrong-password': return 'Wrong password provided.';
-      case 'email-already-in-use': return 'This email is already registered.';
-      case 'invalid-email': return 'Invalid email address.';
-      case 'weak-password': return 'Password should be at least 6 characters.';
-      default: return 'An error occurred. Please try again.';
+      case 'wrong-password': return 'Wrong password.';
+      case 'email-already-in-use': return 'Email already registered.';
+      case 'invalid-email': return 'Invalid email.';
+      case 'weak-password': return 'Password must be at least 6 characters.';
+      case 'permission-denied': return 'Database permission denied. Check Firestore Rules.';
+      default: return 'An error occurred: $code';
     }
   }
 }
