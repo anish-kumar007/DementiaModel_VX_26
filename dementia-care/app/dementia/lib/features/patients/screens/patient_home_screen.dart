@@ -8,6 +8,10 @@ import '../services/location_service.dart';
 import 'game1_screen.dart';
 import 'game2_screen.dart';
 import 'pairing_code_screen.dart';
+import 'consent_and_geofence_screen.dart';
+import 'patient_reminders_screen.dart';
+import 'voice_assistant_screen.dart';
+import 'patient_contacts_screen.dart';
 
 class PatientHomeScreen extends StatefulWidget {
   const PatientHomeScreen({super.key});
@@ -129,11 +133,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                         icon: Icons.location_on,
                         color: AppTheme.statusCardColor,
                         onTap: () {
-                          // TODO: Geofence & Consent screen (Hours 12-16)
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ConsentAndGeofenceScreen()));
                         },
                       ),
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 14),                 
                     Expanded(
                       child: LargeActionCard(
                         title: AppConstants.pairDeviceLabel,
@@ -147,7 +152,51 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                         },
                       ),
                     ),
+              Expanded( 
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: LargeActionCard(
+                        title: 'Reminders',
+                        icon: Icons.alarm,
+                        color: Colors.amber.shade800,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const PatientRemindersScreen()),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: LargeActionCard(
+                        title: 'Voice Help',
+                        icon: Icons.mic,
+                        color: Colors.indigo.shade700,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const VoiceAssistantScreen()),
+                          );
+                        },
+                      ),
+                    ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Expanded(
+                child: LargeActionCard(
+                  title: 'Important Contacts',
+                  icon: Icons.contacts,
+                  color: Colors.blueGrey.shade700,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const PatientContactsScreen()),
+                    );
+                  },
                 ),
               ),
               const SizedBox(height: 20),
@@ -158,8 +207,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             ],
           ),
         ),
+        ]),
+      ),
       ),
     );
   }
 }
-
