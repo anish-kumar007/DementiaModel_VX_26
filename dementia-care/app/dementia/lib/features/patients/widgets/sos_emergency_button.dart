@@ -4,8 +4,13 @@ import '../../../core/constants.dart';
 
 class SosEmergencyButton extends StatelessWidget {
   final VoidCallback onPressed;
+  final bool isSending;
 
-  const SosEmergencyButton({super.key, required this.onPressed});
+  const SosEmergencyButton({
+    super.key,
+    required this.onPressed,
+    this.isSending = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -19,15 +24,22 @@ class SosEmergencyButton extends StatelessWidget {
           ),
           elevation: 8,
         ),
-        onPressed: onPressed,
-        child: const Row(
+        onPressed: isSending ? null : onPressed,
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.warning_amber_rounded, size:40, color: Colors.white),
-            SizedBox(width: 12),
+            if (isSending)
+              const CircularProgressIndicator(color: Colors.white)
+            else
+              const Icon(Icons.warning_amber_rounded, size: 40, color: Colors.white),
+            const SizedBox(width: 12),
             Text(
-              AppConstants.sosEmergencyLabel,
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+              isSending ? 'SENDING SOS...' : AppConstants.sosEmergencyLabel,
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
           ],
         ),
