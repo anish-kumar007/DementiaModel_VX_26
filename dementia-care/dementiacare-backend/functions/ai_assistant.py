@@ -5,7 +5,7 @@ from config import GEMINI_API_KEY
 
 def get_ai_client():
     """Initializes the official google-genai client with direct API key."""
-    api_key = GEMINI_API_KEY# <-- put your actual key string here
+    api_key = GEMINI_API_KEY
     
     if not api_key:
         raise ValueError("API key is required.")
