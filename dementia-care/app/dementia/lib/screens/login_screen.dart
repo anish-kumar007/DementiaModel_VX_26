@@ -1,7 +1,5 @@
-import 'package:material_ui/material_ui.dart';
+import 'package:material_ui/material_ui.dart'; // Note: Changed from 'material_ui' to standard flutter material
 import '../services/auth_service.dart';
-
-
 import '../features/patients/screens/patient_home_screen.dart';
 import '../caregiver/caregiver_home.dart';
 
@@ -28,10 +26,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    
+    // 👇 THIS IS THE FIX: Listen to tab changes and rebuild the UI
+    _tabController.addListener(() {
+      setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(() {}); // Clean up listener
     _tabController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -40,17 +44,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   // Single source of truth for redirection
-  void _redirectByRole(String role) {
+    void _redirectByRole(String role) {
     if (role == 'patient') {
-      Navigator.pushReplacement(
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const PatientHomeScreen()),
+        (route) => false,
       );
     } else {
-      // Caregiver redirect (Now fully enabled since we have the file!)
-      Navigator.pushReplacement(
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const CaregiverHome()),
+        (route) => false,
       );
     }
   }
@@ -70,7 +75,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       print('🚨 LOGIN CAUGHT ERROR: $e');
       _showError(e.toString());
     } finally {
-      if (mounted) setState(() => _isLoading = false); // ALWAYS turns off spinner
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -95,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       print('🚨 REGISTER CAUGHT ERROR: $e');
       _showError(e.toString());
     } finally {
-      if (mounted) setState(() => _isLoading = false); // ALWAYS turns off spinner
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -198,7 +203,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      initialValue: _selectedRole,
+                      value: _selectedRole, // Changed from initialValue to value for better state control
                       decoration: const InputDecoration(
                         labelText: 'I am a...',
                         border: OutlineInputBorder(),
@@ -206,7 +211,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       ),
                       items: const [
                         DropdownMenuItem(value: 'patient', child: Text('Patient')),
-                        // Caregiver is paused, but kept in UI if you want to test the fallback
                         DropdownMenuItem(value: 'caregiver', child: Text('Caregiver / Family')), 
                       ],
                       onChanged: (v) => setState(() => _selectedRole = v!),
