@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // 👈 Added for signOut
+
 import '../../../core/theme.dart';
 import '../services/sos_service.dart';
 import '../services/location_service.dart';
@@ -42,6 +44,43 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   }
 
   String _t(String en, String hi) => _isHindi ? hi : en;
+
+  // 👇 NEW: Logout Handler with Confirmation Dialog
+  Future<void> _handleLogout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E242B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          _t('Logout?', 'लॉगआउट करें?'),
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        content: Text(
+          _t('Are you sure you want to log out?', 'क्या आप वाकई लॉगआउट करना चाहते हैं?'),
+          style: const TextStyle(fontSize: 18, color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(_t('Cancel', 'रद्द करें'), style: const TextStyle(fontSize: 18, color: Colors.white70)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(_t('Logout', 'लॉगआउट'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      // This single line triggers the AuthWrapper in main.dart to redirect to Login!
+      await FirebaseAuth.instance.signOut(); 
+    }
+  }
 
   Future<void> _confirmAndTriggerSos() async {
     HapticFeedback.heavyImpact();
@@ -175,7 +214,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Top bar: Language toggle + Caregiver/Safe Zone utility icons
+              // Top bar: Language toggle + Utility icons + LOGOUT
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -210,6 +249,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                           context,
                           MaterialPageRoute(builder: (_) => PairingCodeScreen(isHindi: _isHindi)),
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      // 👇 NEW: Logout Button (Red to signify exit, with tooltip)
+                      IconButton(
+                        tooltip: _t('Logout', 'लॉगआउट'),
+                        icon: const Icon(Icons.logout, size: 32, color: Colors.redAccent),
+                        onPressed: _handleLogout,
                       ),
                     ],
                   ),

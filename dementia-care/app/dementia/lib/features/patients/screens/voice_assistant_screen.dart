@@ -60,23 +60,28 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
       _isLoading = true;
     });
 
-    final kindFallback = _t(
-      'I am right here with you. Would you like me to open your family contacts?',
-      'मैं यहीं आपके साथ हूँ। क्या आप चाहते हैं कि मैं आपके परिवार के नंबर खोलूँ?',
+    final kindFallback = VoiceAssistantResponse(
+      reply: _t(
+        'I am right here with you. Would you like me to open your family contacts?',
+        'मैं यहीं आपके साथ हूँ। क्या आप चाहते हैं कि मैं आपके परिवार के नंबर खोलूँ?',
+      ),
     );
 
-    String reply;
+    String replyText;
     try {
-      // Enforce mandatory 8-second timeout with kind fallback
-      reply = await VoiceAssistantService.getAiCompanionResponse(query)
-          .timeout(const Duration(seconds: 8), onTimeout: () => kindFallback);
+      // Fixed: Pass query using the required named parameter 'userQuery'
+      final response = await VoiceAssistantService.getAiCompanionResponse(userQuery: query)
+          .timeout(const Duration(seconds: 8));
+      replyText = response.reply;
+    } on TimeoutException {
+      replyText = kindFallback.reply;
     } catch (_) {
-      reply = kindFallback;
+      replyText = kindFallback.reply;
     }
 
     // Handle quick call action (e.g., "call aarav" or action: call:Aarav)
     final lower = query.toLowerCase();
-    if (lower.contains('aarav') || lower.contains('आरव') || reply.startsWith('call:')) {
+    if (lower.contains('aarav') || lower.contains('आरव') || replyText.startsWith('call:')) {
       final callUri = Uri.parse('tel:+919876543210');
       if (await canLaunchUrl(callUri)) {
         await launchUrl(callUri);
@@ -85,11 +90,11 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
 
     if (!mounted) return;
     setState(() {
-      _aiResponse = reply;
+      _aiResponse = replyText;
       _isLoading = false;
     });
 
-    await VoiceAssistantService.speak(reply);
+    await VoiceAssistantService.speak(replyText);
   }
 
   @override
@@ -144,7 +149,6 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            // Calm Teal/Amber Mic Button (No red, per theme rules)
             SizedBox(
               height: 84,
               child: ElevatedButton.icon(
