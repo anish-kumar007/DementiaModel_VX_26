@@ -104,23 +104,26 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
         .where('status', isEqualTo: 'pending')
         .snapshots()
         .listen((snapshot) async {
-      if (_secondsRemaining <= 0) return; // never approve an expired code
+      if (_secondsRemaining <= 0) return;
 
       for (final doc in snapshot.docs) {
         final caregiverUid = doc.data()['caregiverUid'] as String;
 
         try {
-          // 1) Consent: add caregiver to my own patient doc (allowed: owner-only update)
+          // ✅ CHANGE THIS: Use set with merge:true so it works even if the patient doc doesn't exist yet
           await FirebaseFirestore.instance
               .collection('patients')
               .doc(uid)
-              .update({'caregivers': FieldValue.arrayUnion([caregiverUid])});
+              .set(
+                {'caregivers': FieldValue.arrayUnion([caregiverUid])},
+                SetOptions(merge: true), 
+              );
 
-          // 2) Answer the request (allowed: code owner may set approved + own pid)
+          // 2) Answer the request
           await doc.reference.update({
             'status': 'approved',
             'pid': uid,
-            'patientName': _patientName, // Replace with actual patient name if you have it
+            'patientName': _patientName, 
           });
 
           // 3) Clean up
@@ -132,9 +135,12 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
             setState(() => _linked = true);
           }
         } catch (e) {
-          print('Error approving link: $e');
+          print('❌ [PATIENT] Error approving link: $e');
         }
       }
+    }, onError: (e) {
+      // ✅ ADD THIS: This will catch permission denied or missing index errors
+      print('❌ [PATIENT] Query Error: $e');
     });
   }
 

@@ -39,6 +39,7 @@ Future<LinkResult> requestLink(String code) async {
       'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
     });
+    print('✅ [CAREGIVER] Request created. Waiting for patient...');
 
     final answer = await reqRef
         .snapshots()
