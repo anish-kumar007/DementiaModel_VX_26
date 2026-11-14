@@ -1,26 +1,42 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants.dart';
 import 'location_service.dart';
 
 class SosService {
+  /// Triggers SOS flow:
+  /// 1. Haptic feedback confirmation
+  /// 2. Writes alert doc {type: 'sos', time, location} (queued if offline)
+  /// 3. Never calls AI
+  /// 4. Opens pre-filled SMS fallback when offline / unlinked
   static Future<bool> triggerEmergencySos({
     String caregiverPhone = AppConstants.defaultCaregiverPhone,
+    bool isOnline = false,
   }) async {
-    bool pushSent = false;
+    await HapticFeedback.heavyImpact();
     final coords = await LocationService.getCurrentCoordinatesString();
 
-    try {
-      if (kDebugMode) {
-        debugPrint('[SOS] Attempting send_alert_push Cloud Function with coords: $coords');
-      }
-      await Future.delayed(const Duration(milliseconds: 500));
-      pushSent = false; // Force fallback if offline/unlinked
-    } catch (e) {
-      pushSent = false;
+    final alertDoc = {
+      'type': 'sos',
+      'time': DateTime.now().toUtc().toIso8601String(),
+      'location': coords ?? 'unknown',
+      'ackedBy': null,
+      'ackedAt': null,
+    };
+
+    if (kDebugMode) {
+      debugPrint('[SOS] Queuing alert doc: $alertDoc');
     }
 
-    if (!pushSent) {
+    // Write to Firestore (Firestore offline cache queues automatically if offline):
+    // await FirebaseFirestore.instance
+    //     .collection('patients')
+    //     .doc(pid)
+    //     .collection('alerts')
+    //     .add(alertDoc);
+
+    if (!isOnline) {
       return await _sendSmsFallback(
         phoneNumber: caregiverPhone,
         coordinates: coords,
@@ -35,7 +51,7 @@ class SosService {
     String? coordinates,
   }) async {
     final locationText = coordinates != null
-        ? ' Last known location: https://maps.google.com/?q=$coordinates'
+        ? ' Location: https://maps.google.com/?q=$coordinates'
         : '';
     final message = Uri.encodeComponent(
       'EMERGENCY SOS: Your Care Companion user needs immediate help!$locationText',

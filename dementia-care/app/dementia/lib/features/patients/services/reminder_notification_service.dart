@@ -7,15 +7,16 @@ class ReminderNotificationService {
       FlutterLocalNotificationsPlugin();
   static final FlutterTts _tts = FlutterTts();
 
-  static Future<void> initialize() async {
+  static Future<void> initialize({bool isHindi = false}) async {
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
-    
-    // Updated to use the required 'settings' named parameter
-    await _notifications.initialize(settings: initSettings);
 
-    // Configure TTS for clear, calm voice readout for dementia patients
-    await _tts.setLanguage('en-IN');
+    await _notifications.initialize(settings: initSettings);
+    await setLanguage(isHindi: isHindi);
+  }
+
+  static Future<void> setLanguage({required bool isHindi}) async {
+    await _tts.setLanguage(isHindi ? 'hi-IN' : 'en-IN');
     await _tts.setSpeechRate(0.45);
     await _tts.setVolume(1.0);
   }
@@ -48,14 +49,13 @@ class ReminderNotificationService {
     );
     const details = NotificationDetails(android: androidDetails);
 
-    // Updated to use required named parameters
     await _notifications.show(
       id: id,
       title: title,
       body: body,
       notificationDetails: details,
     );
-    
+
     await speakReminder('$title. $body');
   }
 }
