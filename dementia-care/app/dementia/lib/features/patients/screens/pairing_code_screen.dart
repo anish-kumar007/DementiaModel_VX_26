@@ -93,7 +93,7 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
 
   /// Watches for a caregiver request doc carrying this exact code and
   /// approves it while the timer is still running.
-  void _listenForPairingRequests(String cleanCode) {
+    void _listenForPairingRequests(String cleanCode) {
     _requestSubscription?.cancel();
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -107,15 +107,33 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
       if (_secondsRemaining <= 0) return; // never approve an expired code
 
       for (final doc in snapshot.docs) {
-        await doc.reference.update({
-          'status': 'approved',
-          'pid': uid,
-          'patientName': _patientName, // see note below
-        });
-        await _retireCurrentCode('used');
-        _requestSubscription?.cancel();
-        _countdownTimer?.cancel();
-        if (mounted) setState(() => _linked = true);
+        final caregiverUid = doc.data()['caregiverUid'] as String;
+
+        try {
+          // 1) Consent: add caregiver to my own patient doc (allowed: owner-only update)
+          await FirebaseFirestore.instance
+              .collection('patients')
+              .doc(uid)
+              .update({'caregivers': FieldValue.arrayUnion([caregiverUid])});
+
+          // 2) Answer the request (allowed: code owner may set approved + own pid)
+          await doc.reference.update({
+            'status': 'approved',
+            'pid': uid,
+            'patientName': _patientName, // Replace with actual patient name if you have it
+          });
+
+          // 3) Clean up
+          await _retireCurrentCode('used');
+          _requestSubscription?.cancel();
+          _countdownTimer?.cancel();
+          
+          if (mounted) {
+            setState(() => _linked = true);
+          }
+        } catch (e) {
+          print('Error approving link: $e');
+        }
       }
     });
   }
