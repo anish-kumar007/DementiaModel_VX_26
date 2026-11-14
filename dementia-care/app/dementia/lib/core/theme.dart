@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 class AppTheme {
+  static const Color secondaryCardColor = Color(0xFF4527A0);
+  static const Color pairingCardColor = Color(0xFF37474F);
   static const Color backgroundDark = Color(0xFF121212);
   static const Color primaryCardColor = Color(0xFF283593);
   static const Color statusCardColor = Color(0xFF00695C);

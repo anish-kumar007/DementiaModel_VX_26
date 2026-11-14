@@ -43,6 +43,9 @@ dependencies:
   firebase_auth: ^7.0.1
 
   crypto: any
+  geolocator: ^14.0.2
+  permission_handler: ^13.0.2
+  url_launcher: ^6.3.3
 dev_dependencies:
   flutter_test:
     sdk: flutter
