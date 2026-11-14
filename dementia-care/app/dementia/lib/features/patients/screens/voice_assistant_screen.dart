@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/voice_assistant_service.dart';
 
@@ -30,19 +31,41 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
       'Hello! Ask me about the time, your reminders, or say "Call Aarav".',
       'नमस्ते! मुझसे समय, अपने रिमाइंडर के बारे में पूछें, या कहें "आरव को कॉल करें"।',
     );
-    VoiceAssistantService.initialize();
+    VoiceAssistantService.initialize(isHindi: widget.isHindi);
   }
 
   Future<void> _startListening() async {
-    final available = await _speech.initialize();
-    if (!available) return;
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if (status == 'done' || status == 'notListening') {
+          setState(() => _isListening = false);
+        }
+      },
+      onError: (error) {
+        print('Speech recognition error: ${error.errorMsg}');
+        setState(() => _isListening = false);
+      },
+    );
+    
+    if (!available) {
+      setState(() {
+        _aiResponse = _t('Speech recognition is not available.', 'वाक् पहचान उपलब्ध नहीं है।');
+      });
+      return;
+    }
 
     setState(() => _isListening = true);
+    
     _speech.listen(
       localeId: widget.isHindi ? 'hi_IN' : 'en_IN',
-      onResult: (val) {
+      // UPGRADE: dictation mode captures full, natural sentences better for elderly users
+      listenMode: stt.ListenMode.dictation, 
+      onResult: (SpeechRecognitionResult val) {
         setState(() => _lastWords = val.recognizedWords);
+        
+        // Only trigger AI when the user pauses and the engine marks it as final
         if (val.finalResult && val.recognizedWords.isNotEmpty) {
+          _stopListening(); // Stop mic immediately to prevent it from hearing the AI's reply
           _handleUserQuery(val.recognizedWords);
         }
       },
@@ -60,32 +83,37 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
       _isLoading = true;
     });
 
-    final kindFallback = VoiceAssistantResponse(
-      reply: _t(
-        'I am right here with you. Would you like me to open your family contacts?',
-        'मैं यहीं आपके साथ हूँ। क्या आप चाहते हैं कि मैं आपके परिवार के नंबर खोलूँ?',
-      ),
+    final kindFallback = _t(
+      'I am right here with you. Would you like me to open your family contacts?',
+      'मैं यहीं आपके साथ हूँ। क्या आप चाहते हैं कि मैं आपके परिवार के नंबर खोलूँ?',
     );
 
     String replyText;
     try {
-      // Fixed: Pass query using the required named parameter 'userQuery'
-      final response = await VoiceAssistantService.getAiCompanionResponse(userQuery: query)
-          .timeout(const Duration(seconds: 8));
+      // --- NEW AI TOUCH: Unified Firestore-driven flow ---
+      // The service now handles writing, listening, timeout (15s), and fallbacks internally!
+      final response = await VoiceAssistantService.getAiCompanionResponse(
+        userQuery: query,
+        uid: 'patient_123', // TODO: Replace with FirebaseAuth.instance.currentUser?.uid ?? 'guest'
+        isHindi: widget.isHindi,
+      );
+      
       replyText = response.reply;
-    } on TimeoutException {
-      replyText = kindFallback.reply;
-    } catch (_) {
-      replyText = kindFallback.reply;
-    }
 
-    // Handle quick call action (e.g., "call aarav" or action: call:Aarav)
-    final lower = query.toLowerCase();
-    if (lower.contains('aarav') || lower.contains('आरव') || replyText.startsWith('call:')) {
-      final callUri = Uri.parse('tel:+919876543210');
-      if (await canLaunchUrl(callUri)) {
-        await launchUrl(callUri);
+      // Handle quick call action (e.g., "call aarav" or action: call:Aarav)
+      final lowerQuery = query.toLowerCase();
+      final lowerReply = replyText.toLowerCase();
+      if (lowerQuery.contains('aarav') || lowerQuery.contains('आरव') || lowerReply.startsWith('call:')) {
+        final callUri = Uri.parse('tel:+919876543210');
+        if (await canLaunchUrl(callUri)) {
+          await launchUrl(callUri);
+        }
       }
+
+    } catch (e) {
+      // Ultimate fallback if something completely unexpected happens
+      print("AI Response Error: $e");
+      replyText = kindFallback;
     }
 
     if (!mounted) return;
