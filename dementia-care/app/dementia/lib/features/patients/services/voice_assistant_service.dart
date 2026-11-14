@@ -1,6 +1,6 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 
 class VoiceAssistantResponse {
@@ -14,30 +14,26 @@ class VoiceAssistantResponse {
 }
 
 class VoiceAssistantService {
-  static final stt.SpeechToText _speech = stt.SpeechToText();
   static final FlutterTts _tts = FlutterTts();
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  static Future<bool> initialize({bool isHindi = false}) async {
-    final available = await _speech.initialize(
-      onError: (val) => debugPrint('[STT Error]: $val'),
-      onStatus: (val) => debugPrint('[STT Status]: $val'),
-    );
+  /// Initializes TTS (STT is handled in the screen to avoid conflicts)
+  static Future<void> initialize({bool isHindi = false}) async {
     await setLanguage(isHindi: isHindi);
-    return available;
   }
 
   static Future<void> setLanguage({required bool isHindi}) async {
-    await _tts.setLanguage(isHindi ? 'hi-IN' : 'en-IN');
-    await _tts.setSpeechRate(0.45);
+    // en-US is generally more reliable for TTS engines than en-IN
+    await _tts.setLanguage(isHindi ? 'hi-IN' : 'en-US');
+    await _tts.setSpeechRate(0.45); // Calm, slow pace for dementia care
     await _tts.setVolume(1.0);
   }
 
-  /// Calls Member A's `assistant_chat` callable with {text, language, history},
-  /// enforces an 8-second timeout, and returns structured {reply, action}.
+  /// The main entry point called from the screen.
   static Future<VoiceAssistantResponse> getAiCompanionResponse({
     required String userQuery,
+    required String uid,
     bool isHindi = false,
-    List<Map<String, String>> history = const [],
   }) async {
     final fallback = VoiceAssistantResponse(
       reply: isHindi
@@ -47,65 +43,102 @@ class VoiceAssistantService {
     );
 
     try {
-      return await _callAssistantFunction(
+      // 1. Write request to Firestore
+      final requestId = await _sendRequestToAI(
+        uid: uid,
         text: userQuery,
         language: isHindi ? 'hi' : 'en',
-        history: history,
-      ).timeout(const Duration(seconds: 8), onTimeout: () => fallback);
+      );
+
+      // 2. Wait for Python backend to process and update the document
+      final result = await _waitForAIResponse(requestId);
+      
+      // 3. Parse action from reply if the backend signals it (e.g., "call:Aarav")
+      final lowerReply = result.reply.toLowerCase();
+      final action = lowerReply.startsWith('call:') ? lowerReply : 'none';
+
+      return VoiceAssistantResponse(
+        reply: result.reply,
+        action: action,
+      );
+
     } catch (e) {
-      if (kDebugMode) debugPrint('[AI CHAT] Error: $e');
+      if (kDebugMode) debugPrint('[AI CHAT] Error or Timeout: $e');
       return fallback;
     }
   }
 
-  static Future<VoiceAssistantResponse> _callAssistantFunction({
+  /// STEP 1: Create the pending document
+  static Future<String> _sendRequestToAI({
+    required String uid,
     required String text,
     required String language,
-    required List<Map<String, String>> history,
   }) async {
-    if (kDebugMode) {
-      debugPrint('[AI CHAT] Calling assistant_chat ($language): $text');
-    }
-
-    // TODO: Replace stub with FirebaseFunctions.instance.httpsCallable('assistant_chat').call({
-    //   'text': text,
-    //   'language': language,
-    //   'history': history,
-    // });
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    final lower = text.toLowerCase();
-    if (lower.contains('call ') || lower.contains('कॉल')) {
-      final target = lower.contains('doctor') || lower.contains('डॉक्टर')
-          ? 'Doctor'
-          : 'Aarav';
-      return VoiceAssistantResponse(
-        reply: language == 'hi'
-            ? '$target को कॉल लगा रहे हैं।'
-            : 'Calling $target for you now.',
-        action: 'call:$target',
-      );
-    }
-
-    if (lower.contains('where') || lower.contains('home') || lower.contains('कहाँ')) {
-      return VoiceAssistantResponse(
-        reply: language == 'hi'
-            ? 'आप घर पर सुरक्षित हैं। सब कुछ ठीक है।'
-            : 'You are safe at home with your family. Everything is alright.',
-        action: 'none',
-      );
-    }
-
-    return VoiceAssistantResponse(
-      reply: language == 'hi'
-          ? 'मैं यहीं आपके साथ हूँ। क्या आप अपने परिवार से बात करना चाहेंगे?'
-          : 'I am here with you. Would you like to check your reminders or call family?',
-      action: 'none',
-    );
+    final docRef = await _firestore.collection('assistantRequests').add({
+      'uid': uid,
+      'text': text,
+      'language': language,
+      'status': 'pending',
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+    return docRef.id;
   }
 
+  /// STEP 2: Listen for the Python backend to flip status to 'completed'
+  static Future<VoiceAssistantResponse> _waitForAIResponse(String requestId) async {
+    final completer = Completer<VoiceAssistantResponse>();
+    late final StreamSubscription<DocumentSnapshot> sub;
+    late final Timer timer;
+
+    sub = _firestore
+        .collection('assistantRequests')
+        .doc(requestId)
+        .snapshots()
+        .listen((snapshot) {
+      if (!snapshot.exists) return;
+      final data = snapshot.data()!;
+
+      if (data['status'] == 'completed') {
+        if (!completer.isCompleted) {
+          completer.complete(
+            VoiceAssistantResponse(
+              reply: (data['reply'] ?? "I am here with you.").toString(),
+              action: 'none',
+            ),
+          );
+        }
+      } else if (data['status'] == 'error') {
+        if (!completer.isCompleted) {
+          completer.completeError(
+            Exception(data['errorMessage'] ?? 'Backend processing failed'),
+          );
+        }
+      }
+    });
+
+    // 15-second timeout to prevent hanging if Python server is slow/offline
+    timer = Timer(const Duration(seconds: 15), () {
+      if (!completer.isCompleted) {
+        completer.completeError(TimeoutException('AI response timed out'));
+      }
+    });
+
+    try {
+      final result = await completer.future;
+      return result;
+    } finally {
+      timer.cancel();
+      await sub.cancel(); // CRITICAL: prevents memory leaks from dangling listeners
+    }
+  }
+
+  /// STEP 3: Speak the reply, auto-detecting Hindi/English
   static Future<void> speak(String text) async {
     await _tts.stop();
+    
+    final isHindi = text.contains('मैं') || text.contains('नमस्ते') || text.contains('आप');
+    await _tts.setLanguage(isHindi ? "hi-IN" : "en-US");
+    
     await _tts.speak(text);
   }
 }
