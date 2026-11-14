@@ -1,5 +1,9 @@
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+
+// >>> Correct paths to the real screens <<<
+import '../features/patients/screens/patient_home_screen.dart';
+import '../caregiver/caregiver_home.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -8,67 +12,123 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
   final AuthService _authService = AuthService();
+  late TabController _tabController;
+
   final _formKey = GlobalKey<FormState>();
-  
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  
+  final TextEditingController _confirmPasswordController = TextEditingController();
+
+  String _selectedRole = 'patient';
   bool _isLoading = false;
-  bool _isLogin = true; // Toggle between Login and Sign Up
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  // Single source of truth for redirection
+  void _redirectByRole(String role) {
+    if (role == 'patient') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const PatientHomeScreen()),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const CaregiverHome()),
+      );
+    }
+  }
+
+  Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _isLoading = true;
-    });
-
+    setState(() => _isLoading = true);
     try {
-      if (_isLogin) {
-        await _authService.signInWithEmail(
-          _emailController.text.trim(),
-          _passwordController.text.trim(),
-        );
-      } else {
-        await _authService.signUpWithEmail(
-          _emailController.text.trim(),
-          _passwordController.text.trim(),
-        );
-      }
-      
-      // If successful, you would navigate to the home screen here
-      // For now, we just show a success message
+      final result = await _authService.signInWithEmail(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
+      if (!mounted) return;
+      _redirectByRole(result['role'] as String);
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleRegister() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_passwordController.text != _confirmPasswordController.text) {
+      _showError('Passwords do not match');
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      final result = await _authService.signUpWithEmail(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+        _selectedRole,
+      );
+      if (!mounted) return;
+      _redirectByRole(result['role'] as String);
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleForgotPassword() async {
+    if (_emailController.text.trim().isEmpty) {
+      _showError('Enter your email first.');
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      await _authService.resetPassword(_emailController.text.trim());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_isLogin ? 'Login Successful' : 'Sign Up Successful')),
+          const SnackBar(
+            content: Text('Reset email sent. Check your inbox.'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-        );
-      }
+      _showError(e.toString());
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message.replaceFirst('Exception: ', '')),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final isRegister = _tabController.index == 1;
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -81,30 +141,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(
-                    Icons.health_and_safety,
-                    size: 80,
-                    color: Colors.blue,
+                  const Icon(Icons.health_and_safety, size: 70, color: Colors.blue),
+                  const SizedBox(height: 16),
+                  TabBar(
+                    controller: _tabController,
+                    labelColor: Colors.blue,
+                    unselectedLabelColor: Colors.grey,
+                    indicatorColor: Colors.blue,
+                    tabs: const [Tab(text: 'Login'), Tab(text: 'Register')],
                   ),
-                  const SizedBox(height: 20),
-                  Text(
-                    _isLogin ? 'Welcome Back' : 'Create Account',
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    _isLogin ? 'Sign in to continue' : 'Sign up to get started',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 24),
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -113,17 +159,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.email),
                     ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your email';
-                      }
-                      if (!value.contains('@')) {
-                        return 'Please enter a valid email';
-                      }
-                      return null;
-                    },
+                    validator: (v) =>
+                        (v == null || v.isEmpty) ? 'Required' : (!v.contains('@') ? 'Invalid email' : null),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
@@ -132,19 +171,48 @@ class _LoginScreenState extends State<LoginScreen> {
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.lock),
                     ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your password';
-                      }
-                      if (value.length < 6) {
-                        return 'Password must be at least 6 characters';
-                      }
-                      return null;
-                    },
+                    validator: (v) =>
+                        (v == null || v.isEmpty) ? 'Required' : (v.length < 6 ? 'Min 6 chars' : null),
                   ),
-                  const SizedBox(height: 30),
+                  if (isRegister) ...[
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _confirmPasswordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Confirm Password',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.lock_outline),
+                      ),
+                      validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: _selectedRole,
+                      decoration: const InputDecoration(
+                        labelText: 'I am a...',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.person),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'patient', child: Text('Patient')),
+                        DropdownMenuItem(value: 'caregiver', child: Text('Caregiver / Family')),
+                      ],
+                      onChanged: (v) => setState(() => _selectedRole = v!),
+                    ),
+                  ],
+                  if (!isRegister) ...[
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _isLoading ? null : _handleForgotPassword,
+                        child: const Text('Forgot Password?'),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
                   ElevatedButton(
-                    onPressed: _isLoading ? null : _submit,
+                    onPressed: _isLoading ? null : (isRegister ? _handleRegister : _handleLogin),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: Colors.blue,
@@ -154,29 +222,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         ? const SizedBox(
                             height: 20,
                             width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : Text(
-                            _isLogin ? 'Login' : 'Sign Up',
-                            style: const TextStyle(fontSize: 16),
-                          ),
-                  ),
-                  const SizedBox(height: 20),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _isLogin = !_isLogin;
-                      });
-                    },
-                    child: Text(
-                      _isLogin
-                          ? "Don't have an account? Sign Up"
-                          : 'Already have an account? Login',
-                      style: const TextStyle(color: Colors.blue),
-                    ),
+                        : Text(isRegister ? 'Create Account' : 'Login',
+                            style: const TextStyle(fontSize: 16)),
                   ),
                 ],
               ),
