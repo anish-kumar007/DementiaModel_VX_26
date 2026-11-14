@@ -1,7 +1,14 @@
-import 'package:flutter/material.dart';
-import 'screens/login_screen.dart'; // Ensure this matches your folder structure
+import 'package:material_ui/material_ui.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'screens/login_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Firebase
+  // Note: You must have google-services.json (Android) or GoogleService-Info.plist (iOS) in your project
+  await Firebase.initializeApp();
+  
   runApp(const MyApp());
 }
 
@@ -14,12 +21,10 @@ class MyApp extends StatelessWidget {
       title: 'Dementia Care',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // This is the correct syntax for the color scheme
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+        primarySwatch: Colors.blue,
         useMaterial3: true,
       ),
-      // This points to your new login screen
-      home: const LoginScreen(), 
+      home: const LoginScreen(),
     );
   }
 }

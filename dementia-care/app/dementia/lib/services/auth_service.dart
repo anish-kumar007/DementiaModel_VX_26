@@ -1,22 +1,62 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'hash_service.dart';
-import 'web3_service.dart';
 
 class AuthService {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   final HashService _hashService = HashService();
-  final Web3Service _web3Service = Web3Service();
 
-  Future<bool> loginPatient(String pin, String storedHash) async {
-    return await _hashService.verifyHash(pin, storedHash);
+  // Get current user
+  User? get currentUser => _auth.currentUser;
+
+  // Sign In with Email and Password
+  Future<User?> signInWithEmail(String email, String password) async {
+    try {
+      UserCredential userCredential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return userCredential.user;
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_getErrorMessage(e.code));
+    }
   }
 
-  Future<String> setupPatientPin(String pin) async {
-    return await _hashService.createHash(pin);
+  // Sign Up with Email and Password
+  Future<User?> signUpWithEmail(String email, String password) async {
+    try {
+      // Optional: Hash password before sending if needed by your backend logic
+      // String hashedPassword = await _hashService.hashPassword(password);
+      
+      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return userCredential.user;
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_getErrorMessage(e.code));
+    }
   }
 
-  Future<bool> loginCaregiver(String privateKeyHex) async {
-    final challenge = _web3Service.generateChallenge();
-    final signature = await _web3Service.signChallenge(privateKeyHex, challenge);
-    // In production, send signature to backend to verify. Here we just check if it worked.
-    return signature != null;
+  // Sign Out
+  Future<void> signOut() async {
+    await _auth.signOut();
+  }
+
+  // Helper to get user-friendly error messages
+  String _getErrorMessage(String code) {
+    switch (code) {
+      case 'user-not-found':
+        return 'No user found for that email.';
+      case 'wrong-password':
+        return 'Wrong password provided.';
+      case 'email-already-in-use':
+        return 'The account already exists for that email.';
+      case 'invalid-email':
+        return 'Invalid email address.';
+      case 'weak-password':
+        return 'Password is too weak.';
+      default:
+        return 'An error occurred. Please try again.';
+    }
   }
 }
