@@ -2,7 +2,7 @@ class DifficultyEngine {
   int _currentLevel = 1;
   int get currentLevel => _currentLevel;
 
-  void adaptDifficultyy({
+  void adaptDifficulty({
     required bool lastGameWon,
     required int currentStreak,
   }) {
