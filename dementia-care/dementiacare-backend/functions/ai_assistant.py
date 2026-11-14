@@ -5,7 +5,6 @@ from config import GEMINI_API_KEY
 
 def get_ai_client():
     """Initializes the official google-genai client with direct API key."""
-    # Paste your actual Gemini API key directly here for the hackathon demo
     api_key = GEMINI_API_KEY# <-- put your actual key string here
     
     if not api_key:
