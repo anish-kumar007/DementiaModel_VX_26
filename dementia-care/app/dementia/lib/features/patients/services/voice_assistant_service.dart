@@ -17,19 +17,16 @@ class VoiceAssistantService {
   static final FlutterTts _tts = FlutterTts();
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Initializes TTS (STT is handled in the screen to avoid conflicts)
   static Future<void> initialize({bool isHindi = false}) async {
     await setLanguage(isHindi: isHindi);
   }
 
   static Future<void> setLanguage({required bool isHindi}) async {
-    // en-US is generally more reliable for TTS engines than en-IN
     await _tts.setLanguage(isHindi ? 'hi-IN' : 'en-US');
-    await _tts.setSpeechRate(0.45); // Calm, slow pace for dementia care
+    await _tts.setSpeechRate(0.45);
     await _tts.setVolume(1.0);
   }
 
-  /// The main entry point called from the screen.
   static Future<VoiceAssistantResponse> getAiCompanionResponse({
     required String userQuery,
     required String uid,
@@ -43,22 +40,25 @@ class VoiceAssistantService {
     );
 
     try {
-      // 1. Write request to Firestore
+      // 1. Write request to Firestore adhering strictly to security rules
       final requestId = await _sendRequestToAI(
         uid: uid,
         text: userQuery,
         language: isHindi ? 'hi' : 'en',
       );
 
-      // 2. Wait for Python backend to process and update the document
+      // 2. Wait for Python backend to process and add the 'reply' field
       final result = await _waitForAIResponse(requestId);
       
-      // 3. Parse action from reply if the backend signals it (e.g., "call:Aarav")
-      final lowerReply = result.reply.toLowerCase();
-      final action = lowerReply.startsWith('call:') ? lowerReply : 'none';
+      final rawReply = result.reply.trim();
+      String action = 'none';
+      
+      if (rawReply.toLowerCase().startsWith('call:')) {
+        action = rawReply; 
+      }
 
       return VoiceAssistantResponse(
-        reply: result.reply,
+        reply: rawReply,
         action: action,
       );
 
@@ -68,7 +68,7 @@ class VoiceAssistantService {
     }
   }
 
-  /// STEP 1: Create the pending document
+  /// Matches the exact keys allowed by Firestore rules: ['uid', 'text', 'language', 'history', 'createdAt']
   static Future<String> _sendRequestToAI({
     required String uid,
     required String text,
@@ -78,17 +78,16 @@ class VoiceAssistantService {
       'uid': uid,
       'text': text,
       'language': language,
-      'status': 'pending',
-      'timestamp': FieldValue.serverTimestamp(),
+      'history': [], // Required by rule's hasOnly check
+      'createdAt': FieldValue.serverTimestamp(), // Required by rule (instead of timestamp)
     });
     return docRef.id;
   }
 
-  /// STEP 2: Listen for the Python backend to flip status to 'completed'
   static Future<VoiceAssistantResponse> _waitForAIResponse(String requestId) async {
     final completer = Completer<VoiceAssistantResponse>();
-    late final StreamSubscription<DocumentSnapshot> sub;
-    late final Timer timer;
+    StreamSubscription<DocumentSnapshot>? sub;
+    Timer? timer;
 
     sub = _firestore
         .collection('assistantRequests')
@@ -96,27 +95,27 @@ class VoiceAssistantService {
         .snapshots()
         .listen((snapshot) {
       if (!snapshot.exists) return;
-      final data = snapshot.data()!;
+      final data = snapshot.data();
+      if (data == null) return;
 
-      if (data['status'] == 'completed') {
+      // When Python backend writes the 'reply' field, consider it completed
+      if (data.containsKey('reply') && data['reply'] != null) {
         if (!completer.isCompleted) {
           completer.complete(
             VoiceAssistantResponse(
-              reply: (data['reply'] ?? "I am here with you.").toString(),
-              action: 'none',
+              reply: data['reply'].toString(),
             ),
           );
         }
-      } else if (data['status'] == 'error') {
+      } else if (data.containsKey('error') && data['error'] != null) {
         if (!completer.isCompleted) {
           completer.completeError(
-            Exception(data['errorMessage'] ?? 'Backend processing failed'),
+            Exception(data['error'].toString()),
           );
         }
       }
     });
 
-    // 15-second timeout to prevent hanging if Python server is slow/offline
     timer = Timer(const Duration(seconds: 15), () {
       if (!completer.isCompleted) {
         completer.completeError(TimeoutException('AI response timed out'));
@@ -127,18 +126,17 @@ class VoiceAssistantService {
       final result = await completer.future;
       return result;
     } finally {
-      timer.cancel();
-      await sub.cancel(); // CRITICAL: prevents memory leaks from dangling listeners
+      timer?.cancel();
+      await sub?.cancel();
     }
   }
 
-  /// STEP 3: Speak the reply, auto-detecting Hindi/English
   static Future<void> speak(String text) async {
     await _tts.stop();
+    final hasHindiScript = RegExp(r'[\u0900-\u097F]').hasMatch(text);
+    final isHindi = hasHindiScript || text.contains('मैं') || text.contains('नमस्ते') || text.contains('आप');
     
-    final isHindi = text.contains('मैं') || text.contains('नमस्ते') || text.contains('आप');
     await _tts.setLanguage(isHindi ? "hi-IN" : "en-US");
-    
     await _tts.speak(text);
   }
 }
