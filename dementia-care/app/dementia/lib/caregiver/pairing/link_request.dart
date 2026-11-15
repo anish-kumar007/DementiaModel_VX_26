@@ -21,16 +21,16 @@ Future<LinkResult> requestLink(String code) async {
   final caregiverUid = FirebaseAuth.instance.currentUser?.uid;
   if (caregiverUid == null) throw LinkError('denied');
 
-  // 1. Validate against the doc the patient wrote in pairing_codes/{digits}
+  // 1. Validate the code the patient recorded.
   final codeSnap = await fs.collection('pairing_codes').doc(clean).get();
   if (!codeSnap.exists) throw LinkError('not-found');
-  
+
   final status = codeSnap.data()?['status'] as String?;
   if (status == 'used') throw LinkError('used');
   if (status == 'expired') throw LinkError('expired');
   if (status != 'active') throw LinkError('not-found');
 
-  // 2. Write request doc; patient screen flips it to 'approved' (10 s timeout)
+  // 2. Write the request; the patient flips it to 'approved' (10 s timeout).
   final reqRef = fs.collection('pairing_requests').doc();
   try {
     await reqRef.set({
@@ -39,29 +39,27 @@ Future<LinkResult> requestLink(String code) async {
       'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
     });
+    print('✅ [CAREGIVER] Request created. Waiting for patient...');
 
-    final answer = await reqRef.snapshots()
+    final answer = await reqRef
+        .snapshots()
         .firstWhere((s) => (s.data()?['status'] ?? 'pending') != 'pending')
         .timeout(const Duration(seconds: 10));
 
     final data = answer.data()!;
-    
+
     if (data['status'] == 'approved') {
+      // ✅ Declare the locals here so 'pid' and 'patientName' are defined.
       final pid = data['pid'] as String;
       final patientName = data['patientName'] as String?;
 
-      // 🔑 CRITICAL FIX: Add this caregiver to the patient's 'caregivers' array.
-      // This is exactly what PatientListScreen queries to build the list!
-      await fs.collection('patients').doc(pid).update({
-        'caregivers': FieldValue.arrayUnion([caregiverUid]),
-      });
-
+      // No patients.update here — the patient adds the caregiver to their
+      // own doc (owner-only write) inside pairing_code_screen.dart.
       return LinkResult(pid, patientName);
     }
-    
+
     if (data['status'] == 'denied') throw LinkError('denied');
     throw LinkError('not-found');
-    
   } on TimeoutException {
     await reqRef.delete().catchError((_) {});
     rethrow;
