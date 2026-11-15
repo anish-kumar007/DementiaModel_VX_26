@@ -1,6 +1,3 @@
-// app/lib/caregiver/map/live_map_screen.dart
-// Listens to patients/{pid} only while this screen is open (the stream is
-// cancelled when the screen is closed), as the brief requires.
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -11,13 +8,14 @@ import '../common.dart';
 class LiveMapScreen extends StatefulWidget {
   const LiveMapScreen({super.key, required this.pid});
   final String pid;
+
   @override
   State<LiveMapScreen> createState() => _LiveMapScreenState();
 }
 
 class _LiveMapScreenState extends State<LiveMapScreen> {
   final _map = MapController();
-  bool _centred = false;
+  LatLng? _lastKnownPos; // FUNCTIONAL FIX: Tracks actual position changes to prevent rebuild loops
 
   LatLng? _point(Map<String, dynamic>? m) {
     if (m == null || m['lat'] == null || m['lng'] == null) return null;
@@ -34,6 +32,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
+          
           final p = snap.data!.data() ?? {};
           final last = p['lastLocation'] as Map<String, dynamic>?;
           final pos = _point(last);
@@ -54,13 +53,16 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             );
           }
 
-          // Follow the patient when a new reading arrives.
-          if (_centred && pos != null) {
+          // FUNCTIONAL FIX: Only move the map if the position has ACTUALLY changed
+          if (pos != null && pos != _lastKnownPos) {
+            _lastKnownPos = pos;
+            // Use addPostFrameCallback to avoid "setState during build" errors
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _map.move(pos, _map.camera.zoom);
+              if (mounted) {
+                _map.move(pos, _map.camera.zoom);
+              }
             });
           }
-          _centred = true;
 
           return Column(
             children: [
@@ -70,8 +72,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                   options: MapOptions(initialCenter: centre, initialZoom: 16),
                   children: [
                     TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'com.example.dementia_care',
                     ),
                     if (zoneCentre != null && radius != null)
@@ -91,8 +92,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                           point: pos,
                           width: 48,
                           height: 48,
-                          child: const Icon(Icons.location_on,
-                              size: 48, color: Color(0xFFC62828)),
+                          child: const Icon(Icons.location_on, size: 48, color: Color(0xFFC62828)),
                         ),
                       ]),
                   ],
@@ -103,14 +103,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                 child: Text(
                   pos == null
                       ? 'Showing the safe zone. No location reading yet.'
-                      : 'Updated ${timeAgo(toDate(last?['time']))}'
+                      : 'Updated ${timeAgo(toDate(last?['time']) ?? DateTime.now())}'
                           '${zone == null ? '  ·  No safe zone set (see Settings)' : ''}',
+                  textAlign: TextAlign.center,
                 ),
               ),
               const Padding(
                 padding: EdgeInsets.only(bottom: 8),
-                child: Text('Map data © OpenStreetMap contributors',
-                    style: TextStyle(fontSize: 11)),
+                child: Text('Map data © OpenStreetMap contributors', style: TextStyle(fontSize: 11)),
               ),
             ],
           );
