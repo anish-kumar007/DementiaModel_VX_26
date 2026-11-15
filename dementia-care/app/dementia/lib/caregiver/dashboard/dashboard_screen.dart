@@ -286,7 +286,6 @@ class _ColorfulNavTile extends StatelessWidget {
     );
   }
 }
-
 class _TodaySessions extends StatelessWidget {
   const _TodaySessions({required this.pid});
   final String pid;
@@ -295,11 +294,16 @@ class _TodaySessions extends StatelessWidget {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
+    
+    // Your logic: Correct Timestamp query + orderBy
     final stream = patientRef(pid)
         .collection('sessions')
         .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .orderBy('timestamp', descending: true)
+        .limit(10)
         .snapshots();
 
+    // Friend's UI: Beautiful outer container
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -317,52 +321,144 @@ class _TodaySessions extends StatelessWidget {
       child: StreamBuilder<QuerySnapshot>(
         stream: stream,
         builder: (context, snap) {
+          if (snap.hasError) {
+            return const Text('Could not load sessions.', 
+                style: TextStyle(color: Color(0xFFE11D48)));
+          }
           if (!snap.hasData) return const Text('Loading activity...');
-          final n = snap.data!.docs.length;
-          return Row(
+
+          final docs = snap.data!.docs;
+          final n = docs.length;
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFCCFBF1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.extension_rounded,
-                  color: Color(0xFF0F766E),
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Today\'s Cognitive Activity',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: Color(0xFF0F172A),
-                      ),
+              // Friend's Header UI
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFCCFBF1),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      n == 0
-                          ? 'No memory games played yet today.'
-                          : '$n game session${n == 1 ? '' : 's'} completed today!',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF0F766E),
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: const Icon(
+                      Icons.sports_esports_rounded,
+                      color: Color(0xFF0F766E),
+                      size: 28,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Today\'s Cognitive Activity',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          n == 0
+                              ? 'No memory games played yet today.'
+                              : '$n game session${n == 1 ? '' : 's'} completed today!',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF0F766E),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+              
+              // Your Logic: Detailed session list (only renders if games exist)
+              if (n > 0) ...[
+                const Divider(height: 24, color: Color(0xFFE2E8F0)),
+                for (final d in docs)
+                  _SessionTile(d.data() as Map<String, dynamic>),
+              ],
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _SessionTile extends StatelessWidget {
+  const _SessionTile(this.data);
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final acc = (data['accuracy'] as num?)?.toDouble() ?? 0.0;
+    final pct = acc <= 1.0 ? (acc * 100).round() : acc.round();
+    final ms = (data['avgResponseMs'] as num?)?.toInt() ?? 0;
+    final ts = data['timestamp'];
+
+    // Dynamic color based on performance, matching the app's theme
+    final statusColor = pct >= 70 
+        ? const Color(0xFF059669) // Green
+        : (pct >= 40 ? const Color(0xFFD97706) : const Color(0xFFE11D48)); // Orange / Red
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: statusColor.withAlpha(25), // Subtle tint
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.sports_esports_rounded,
+              color: statusColor,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${data['game'] ?? 'Game'} — Level ${data['level'] ?? '?'}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$pct% accuracy • ${ms}ms avg • ${data['language'] == 'hi' ? 'Hindi' : 'English'}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (ts != null)
+            Text(
+              timeAgo(toDate(ts)), // Uses your existing common.dart helper
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF94A3B8),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -386,6 +482,7 @@ class _LatestAlerts extends StatelessWidget {
         if (!snap.hasData) return const SizedBox.shrink();
         final docs = snap.data!.docs;
 
+        // Friend's UI: Beautiful "All Quiet" state
         if (docs.isEmpty) {
           return Container(
             decoration: BoxDecoration(
@@ -414,6 +511,7 @@ class _LatestAlerts extends StatelessWidget {
           );
         }
 
+        // Friend's UI: Beautiful Alert List state + Your logic for data mapping
         return Container(
           decoration: BoxDecoration(
             color: const Color(0xFFFFF1F2),
@@ -447,19 +545,19 @@ class _LatestAlerts extends StatelessWidget {
                   leading: CircleAvatar(
                     backgroundColor: Colors.white,
                     child: Icon(
-                      alertIcon(d['type'] as String?),
-                      color: alertColor(d['type'] as String?),
+                      alertIcon(d['type'] as String?), // Your helper
+                      color: alertColor(d['type'] as String?), // Your helper
                       size: 20,
                     ),
                   ),
                   title: Text(
-                    alertLabel(d['type'] as String?),
+                    alertLabel(d['type'] as String?), // Your helper
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF1E293B),
                     ),
                   ),
-                  subtitle: Text(timeAgo(toDate(d['time']))),
+                  subtitle: Text(timeAgo(toDate(d['time']))), // Your helper
                   trailing: d['ackedAt'] == null
                       ? Container(
                           padding: const EdgeInsets.symmetric(
