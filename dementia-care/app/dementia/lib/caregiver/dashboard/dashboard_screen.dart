@@ -149,33 +149,81 @@ class _NavButton extends StatelessWidget {
         ),
       );
 }
-
 class _TodaySessions extends StatelessWidget {
   const _TodaySessions({required this.pid});
   final String pid;
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
+    
+    // Note: where + orderBy on the SAME field does NOT require a composite index in Firestore.
     final stream = patientRef(pid)
         .collection('sessions')
         .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .orderBy('timestamp', descending: true)
+        .limit(10)
         .snapshots();
+
     return InfoCard(
       title: 'Today\'s activity',
       child: StreamBuilder<QuerySnapshot>(
         stream: stream,
         builder: (context, snap) {
+          if (snap.hasError) {
+            return const Text('Could not load sessions.', style: TextStyle(color: Colors.red));
+          }
           if (!snap.hasData) return const Text('Loading...');
-          final n = snap.data!.docs.length;
-          return Text(
-            n == 0
-                ? 'No games played yet today.'
-                : '$n game session${n == 1 ? '' : 's'} completed today.',
-            style: const TextStyle(fontSize: 15),
+
+          final docs = snap.data!.docs;
+          if (docs.isEmpty) {
+            return const Text('No games played yet today.', style: TextStyle(fontSize: 15));
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${docs.length} game session${docs.length == 1 ? '' : 's'} completed today.',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              const Divider(height: 16),
+              for (final d in docs)
+                _SessionTile(d.data() as Map<String, dynamic>),
+            ],
           );
         },
       ),
+    );
+  }
+}
+
+class _SessionTile extends StatelessWidget {
+  const _SessionTile(this.data);
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final acc = (data['accuracy'] as num?)?.toDouble() ?? 0.0;
+    final pct = acc <= 1.0 ? (acc * 100).round() : acc.round();
+    final ms = (data['avgResponseMs'] as num?)?.toInt() ?? 0;
+    final ts = data['timestamp'];
+
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        Icons.sports_esports,
+        color: pct >= 70 ? Colors.green : (pct >= 40 ? Colors.orange : Colors.red),
+      ),
+      title: Text(
+        '${data['game'] ?? 'Game'} — Level ${data['level'] ?? '?'}',
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text('$pct% accuracy • ${ms}ms avg • ${data['language'] ?? ''}'),
+      // Assumes your common.dart `toDate()` handles Firestore Timestamps (which it already does for alerts)
+      trailing: ts != null ? Text(timeAgo(toDate(ts))) : null,
     );
   }
 }
