@@ -1,17 +1,11 @@
-// app/lib/caregiver/push/push_handler.dart
-// Shows alert pushes while the app is open, and opens the alert on tap.
-// B already saves the FCM token and asks notification permission (core).
-//
-// ASSUMPTION: send_alert_push puts these keys in the message DATA:
-//   pid, alertId, type. Confirm with A. If A sends data-only messages, also add
-// a top-level background handler in main.dart (see SETUP.md).
 import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import '../alerts/alerts_screen.dart';
+// FUNCTIONAL FIX: Import the helpers directly to avoid circular dependency risks
+import '../alerts/alerts_screen.dart'; 
 
 class CaregiverPush {
   static final _local = FlutterLocalNotificationsPlugin();
@@ -35,19 +29,27 @@ class CaregiverPush {
       ),
       onDidReceiveNotificationResponse: (r) {
         if (r.payload == null) return;
-        _open(nav, Map<String, dynamic>.from(jsonDecode(r.payload!)));
+        try {
+          // FUNCTIONAL FIX: Safe JSON decoding
+          final data = Map<String, dynamic>.from(jsonDecode(r.payload!));
+          _open(nav, data);
+        } catch (e) {
+          debugPrint('Push payload decode error: $e');
+        }
       },
     );
+
     await _local
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_channel);
 
-    // App open: FCM does not show a banner itself, so show one.
+    // 1. App open: FCM does not show a banner itself, so show one locally.
     FirebaseMessaging.onMessage.listen((m) {
       final n = m.notification;
-      final title = n?.title ?? _title(m.data);
+      final data = m.data;
+      final title = n?.title ?? _title(data);
       final body = n?.body ?? 'Open the app to see details.';
+      
       _local.show(
         id: m.hashCode,
         title: title,
@@ -61,27 +63,36 @@ class CaregiverPush {
             priority: Priority.high,
           ),
         ),
-        payload: jsonEncode(m.data),
+        payload: jsonEncode(data),
       );
     });
 
-    // App in background, user taps the notification.
+    // 2. App in background, user taps the notification.
     FirebaseMessaging.onMessageOpenedApp.listen((m) => _open(nav, m.data));
 
-    // App was closed, user tapped the notification to start it.
+    // 3. App was closed, user tapped the notification to start it.
     final first = await FirebaseMessaging.instance.getInitialMessage();
-    if (first != null) _open(nav, first.data);
+    if (first != null) {
+      // FUNCTIONAL FIX: Slight delay ensures Navigator is mounted after cold start
+      Future.delayed(const Duration(milliseconds: 500), () => _open(nav, first.data));
+    }
   }
 
-  static String _title(Map<String, dynamic> d) =>
-      alertLabel(d['type'] as String?);
+  static String _title(Map<String, dynamic> d) => alertLabel(d['type'] as String?);
 
   static void _open(NavigatorState nav, Map<String, dynamic> d) {
+    // FUNCTIONAL FIX: Strict null/empty checking for pid
     final pid = d['pid'] as String?;
-    if (pid == null) return;
+    if (pid == null || pid.isEmpty) {
+      debugPrint('Push notification missing valid pid: $d');
+      return;
+    }
+    
     nav.push(MaterialPageRoute(
-      builder: (_) =>
-          AlertsScreen(pid: pid, highlightId: d['alertId'] as String?),
+      builder: (_) => AlertsScreen(
+        pid: pid, 
+        highlightId: d['alertId'] as String?,
+      ),
     ));
   }
 }

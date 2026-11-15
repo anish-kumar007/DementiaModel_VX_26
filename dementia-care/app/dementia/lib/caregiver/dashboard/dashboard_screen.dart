@@ -292,99 +292,147 @@ class _TodaySessions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day);
-    
-    // Your logic: Correct Timestamp query + orderBy
-    final stream = patientRef(pid)
-        .collection('sessions')
-        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-        .orderBy('timestamp', descending: true)
-        .limit(10)
-        .snapshots();
+    // Step 1: Check if we even have a valid patient ID
+    if (pid.isEmpty || pid == 'null') {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.red.shade200)),
+        child: const Text('❌ ERROR: Patient ID is missing or empty. The app doesn\'t know which patient to load.', 
+            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+      );
+    }
 
-    // Friend's UI: Beautiful outer container
+    // Step 2: Try a SIMPLE query first (no where, no orderBy) to test basic permissions
+    final simpleStream = patientRef(pid).collection('sessions').limit(5).snapshots();
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFF0D9488).withAlpha(70)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(10),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       padding: const EdgeInsets.all(16),
       child: StreamBuilder<QuerySnapshot>(
-        stream: stream,
+        stream: simpleStream,
         builder: (context, snap) {
+          // 🔥 DIAGNOSTIC: If even the simple query fails, it's a Permissions or Path issue.
           if (snap.hasError) {
-            return const Text('Could not load sessions.', 
-                style: TextStyle(color: Color(0xFFE11D48)));
+            final err = snap.error.toString();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Today\'s Cognitive Activity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  color: Colors.red.shade50,
+                  child: Text(
+                    '❌ DATABASE ERROR:\n\n$err\n\n👉 FIX: Check your Firestore Rules. The caregiver must be in the "caregivers" array of this patient\'s document.',
+                    style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            );
           }
-          if (!snap.hasData) return const Text('Loading activity...');
+          
+          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
 
           final docs = snap.data!.docs;
-          final n = docs.length;
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Friend's Header UI
-              Row(
+          
+          // Step 3: If simple query works, but we want to filter by today, let's check the data types
+          if (docs.isNotEmpty) {
+            final firstDoc = docs.first.data() as Map<String, dynamic>;
+            final ts = firstDoc['timestamp'];
+            
+            // Check if timestamp is a String (old broken code) or a real Timestamp (new fixed code)
+            if (ts is String) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Text('Today\'s Cognitive Activity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
+                  const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFCCFBF1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.sports_esports_rounded,
-                      color: Color(0xFF0F766E),
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Today\'s Cognitive Activity',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: Color(0xFF0F172A),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          n == 0
-                              ? 'No memory games played yet today.'
-                              : '$n game session${n == 1 ? '' : 's'} completed today!',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF0F766E),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    color: Colors.orange.shade50,
+                    child: const Text(
+                      '⚠️ DATA TYPE MISMATCH:\n\nYour database has old session data saved as a "String" instead of a "Timestamp".\n\n👉 FIX: Go to Firebase Console, delete the old "sessions" documents, and play a game on the patient app to generate a new, correctly formatted session.',
+                      style: TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
-              ),
-              
-              // Your Logic: Detailed session list (only renders if games exist)
-              if (n > 0) ...[
-                const Divider(height: 24, color: Color(0xFFE2E8F0)),
-                for (final d in docs)
-                  _SessionTile(d.data() as Map<String, dynamic>),
-              ],
-            ],
+              );
+            }
+          }
+
+          // Step 4: If we got here, basic read works and data types are good. 
+          // Now let's try the actual filtered query for "Today".
+          final now = DateTime.now();
+          final start = DateTime(now.year, now.month, now.day);
+          final filteredStream = patientRef(pid)
+              .collection('sessions')
+              .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+              .orderBy('timestamp', descending: true)
+              .limit(10)
+              .snapshots();
+
+          return StreamBuilder<QuerySnapshot>(
+            stream: filteredStream,
+            builder: (context, filteredSnap) {
+              if (filteredSnap.hasError) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Today\'s Cognitive Activity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      color: Colors.blue.shade50,
+                      child: const Text(
+                        '⚠️ INDEX REQUIRED:\n\nThe query needs a Firestore Index.\n\n👉 FIX: Look at your terminal for a "cloud_firestore/failed-precondition" error. It contains a clickable URL. Click it to create the index, wait 2 minutes, and restart the app.',
+                        style: TextStyle(color: Colors.blue, fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              final filteredDocs = filteredSnap.data?.docs ?? [];
+              final n = filteredDocs.length;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: const Color(0xFFCCFBF1), borderRadius: BorderRadius.circular(12)),
+                        child: const Icon(Icons.sports_esports_rounded, color: Color(0xFF0F766E), size: 28),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Today\'s Cognitive Activity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
+                            const SizedBox(height: 4),
+                            Text(
+                              n == 0 ? 'No memory games played yet today.' : '$n game session${n == 1 ? '' : 's'} completed today!',
+                              style: const TextStyle(fontSize: 14, color: Color(0xFF0F766E), fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (n > 0) ...[
+                    const Divider(height: 24, color: Color(0xFFE2E8F0)),
+                    for (final d in filteredDocs) _SessionTile(d.data() as Map<String, dynamic>),
+                  ],
+                ],
+              );
+            },
           );
         },
       ),
