@@ -16,7 +16,7 @@ class DifficultyEngine {
 
     if (lastAnswerCorrect && !isSlow) {
       _consecutiveMisses = 0;
-      if (currentStreak >= 2 && _currentLevel < 5) {
+      if (currentStreak >= 1 && _currentLevel < 5) {
         _currentLevel++;
       }
     } else {
