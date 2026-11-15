@@ -93,7 +93,7 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
 
   /// Watches for a caregiver request doc carrying this exact code and
   /// approves it while the timer is still running.
-    void _listenForPairingRequests(String cleanCode) {
+      void _listenForPairingRequests(String cleanCode) {
     _requestSubscription?.cancel();
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -110,40 +110,48 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
         final caregiverUid = doc.data()['caregiverUid'] as String;
 
         try {
-          // ✅ CHANGE THIS: Use set with merge:true so it works even if the patient doc doesn't exist yet
+          // ✅ 1. FORCE SAVE THE LINK. 
+          // SetOptions(merge: true) creates the doc if it's missing, 
+          // or safely adds to the array if it exists.
           await FirebaseFirestore.instance
               .collection('patients')
               .doc(uid)
               .set(
                 {'caregivers': FieldValue.arrayUnion([caregiverUid])},
-                SetOptions(merge: true), 
+                SetOptions(merge: true),
               );
 
-          // 2) Answer the request
+          // ✅ 2. Approve the request so the caregiver's app knows it succeeded
           await doc.reference.update({
             'status': 'approved',
             'pid': uid,
             'patientName': _patientName, 
           });
 
-          // 3) Clean up
+          // ✅ 3. Retire the code so it can't be reused
           await _retireCurrentCode('used');
+          
+          // ✅ 4. Clean up
           _requestSubscription?.cancel();
           _countdownTimer?.cancel();
           
           if (mounted) {
             setState(() => _linked = true);
           }
+          
+          print('✅ [PATIENT] SUCCESS: Linked caregiver $caregiverUid to patient $uid');
+          
         } catch (e) {
-          print('❌ [PATIENT] Error approving link: $e');
+          print('❌ [PATIENT] FAILED to save link: $e');
+          // If saving fails, deny the request so the caregiver doesn't hang forever
+          await doc.reference.update({'status': 'denied'});
         }
       }
     }, onError: (e) {
-      // ✅ ADD THIS: This will catch permission denied or missing index errors
       print('❌ [PATIENT] Query Error: $e');
     });
   }
-
+  
   Future<void> _retireCurrentCode(String status) async {
     final clean = _pairingCode.replaceAll(RegExp(r'\D'), '');
     if (clean.length != 6) return;
