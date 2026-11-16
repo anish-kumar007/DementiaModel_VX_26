@@ -51,51 +51,61 @@ class LocationService {
     );
   }
 
-  /// Fetches high-accuracy reading (dropping low-accuracy fixes > 100m)
-  /// along with current device battery level for patients/{pid}.
-  static Future<Map<String, dynamic>?> getFilteredLocationPayload() async {
+  /// One high-accuracy fix, dropping low-accuracy readings (over 100 m).
+  static Future<Position?> getFilteredPosition() async {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return null;
 
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return null;
+      }
+
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 6),
+          timeLimit: Duration(seconds: 8),
         ),
       );
 
-      // Drop low-accuracy GPS readings per project brief
       if (position.accuracy > 100.0) {
         if (kDebugMode) {
           debugPrint('[LOCATION] Dropped low-accuracy fix: ${position.accuracy}m');
         }
         return null;
       }
-
-      final batteryLevel = await _battery.batteryLevel;
-
-      return {
-        'lastLocation': {
-          'lat': position.latitude,
-          'lng': position.longitude,
-          'accuracy': position.accuracy,
-          'time': DateTime.now().toIso8601String(),
-        },
-        'battery': batteryLevel,
-        'lastSeen': DateTime.now().toIso8601String(),
-      };
+      return position;
     } catch (e) {
       if (kDebugMode) debugPrint('[LOCATION] Failed to get position: $e');
       return null;
     }
   }
 
+  /// Fetches a reading plus battery level in the shape patients/{pid} stores.
+  static Future<Map<String, dynamic>?> getFilteredLocationPayload() async {
+    final position = await getFilteredPosition();
+    if (position == null) return null;
+    final batteryLevel = await _battery.batteryLevel;
+    final now = DateTime.now();
+
+    return {
+      'lastLocation': {
+        'lat': position.latitude,
+        'lng': position.longitude,
+        'accuracy': position.accuracy,
+        'time': now.millisecondsSinceEpoch,
+      },
+      'battery': batteryLevel,
+      'lastSeen': now.millisecondsSinceEpoch,
+    };
+  }
+
   /// Fetches current coordinates formatted as "lat,lng" for SOS or Geofence checks
   static Future<String?> getCurrentCoordinatesString() async {
-    final payload = await getFilteredLocationPayload();
-    if (payload == null) return null;
-    final loc = payload['lastLocation'] as Map<String, dynamic>;
-    return '${(loc['lat'] as double).toStringAsFixed(6)},${(loc['lng'] as double).toStringAsFixed(6)}';
+    final position = await getFilteredPosition();
+    if (position == null) return null;
+    return '${position.latitude.toStringAsFixed(6)},${position.longitude.toStringAsFixed(6)}';
   }
 }

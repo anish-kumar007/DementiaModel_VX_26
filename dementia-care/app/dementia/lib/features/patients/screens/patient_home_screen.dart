@@ -3,8 +3,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../../../core/theme.dart';
+import '../../../services/patient_writes.dart';
+import '../../../services/reminder_utils.dart';
 import '../services/sos_service.dart';
 import '../services/location_service.dart';
 import 'game1_screen.dart';
@@ -32,7 +34,10 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   @override
   void initState() {
     super.initState();
-    LocationService.initializeLocationAndBatteryExemption();
+    LocationService.initializeLocationAndBatteryExemption().then((granted) {
+      // Share location with linked caregivers while the patient app is open.
+      if (granted) PatientTelemetry.start();
+    });
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() => _now = DateTime.now());
     });
@@ -41,6 +46,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   @override
   void dispose() {
     _clockTimer.cancel();
+    PatientTelemetry.stop();
     super.dispose();
   }
 
@@ -160,8 +166,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         content: Text(
           triggered
               ? _t(
-                  'Emergency SOS sent! Opening SMS backup...',
-                  'आपातकालीन SOS भेजा गया! SMS खुल रहा है...',
+                  'Emergency SOS sent to your caregivers. If there is no internet, an SMS backup opens.',
+                  'आपातकालीन SOS आपके देखभालकर्ताओं को भेज दिया गया है। इंटरनेट न होने पर SMS बैकअप खुलेगा।',
                 )
               : _t(
                   'Could not send SOS. Please call your caregiver.',
@@ -414,19 +420,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                         size: 30,
                       ),
                       const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _t(
-                            'Next: 01:30 PM • Lunch & Water',
-                            'अगला: 01:30 PM • दोपहर का भोजन और पानी',
-                          ),
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
+                      Expanded(child: _NextReminderText(isHindi: _isHindi)),
                     ],
                   ),
                 ),
@@ -538,6 +532,60 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Shows the next reminder the caregiver scheduled for this patient.
+class _NextReminderText extends StatelessWidget {
+  const _NextReminderText({required this.isHindi});
+
+  final bool isHindi;
+
+  static const _style = TextStyle(
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+    color: Colors.white,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      return Text(isHindi ? 'अगला रिमाइंडर' : 'Next reminder', style: _style);
+    }
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('patients')
+          .doc(uid)
+          .collection('reminders')
+          .snapshots(),
+      builder: (context, snap) {
+        final items = (snap.data?.docs ?? [])
+            .map((d) => <String, dynamic>{...d.data(), 'id': d.id})
+            .toList();
+        final next = ReminderTime.next(items);
+
+        if (next == null) {
+          return Text(
+            isHindi ? 'अगला: आज कोई रिमाइंडर नहीं' : 'Next: no reminders set',
+            style: _style,
+          );
+        }
+
+        final time = ReminderTime.to12h(next['time'] as String?);
+        final title = (next['title'] as String?)?.trim();
+        final label = (title == null || title.isEmpty)
+            ? (isHindi ? 'रिमाइंडर' : 'Reminder')
+            : title;
+        return Text(
+          isHindi ? 'अगला: $time • $label' : 'Next: $time • $label',
+          style: _style,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        );
+      },
     );
   }
 }

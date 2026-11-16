@@ -76,6 +76,13 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
           'status': 'active',
           'createdAt': FieldValue.serverTimestamp(),
         });
+        // Show the caregiver the patient's real name, not "Patient".
+        final patientSnap = await FirebaseFirestore.instance
+            .collection('patients')
+            .doc(uid)
+            .get();
+        final name = (patientSnap.data()?['name'] as String?)?.trim();
+        if (name != null && name.isNotEmpty) _patientNameValue = name;
       } catch (_) {
         // Offline: the code still shows, but the caregiver will get
         // 'not-found' — acceptable degradation for a pairing flow.
@@ -163,8 +170,8 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
     } catch (_) {}
   }
 
-  // TODO: replace with the real name from your user profile / auth state.
-  String get _patientName => 'Patient';
+  String _patientNameValue = 'Patient';
+  String get _patientName => _patientNameValue;
 
   Future<void> _refreshCode() async {
     _requestSubscription?.cancel();

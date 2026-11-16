@@ -4,8 +4,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-// FUNCTIONAL FIX: Import the helpers directly to avoid circular dependency risks
-import '../alerts/alerts_screen.dart'; 
+import '../alerts/alerts_screen.dart';
+import '../common.dart';
 
 class CaregiverPush {
   static final _local = FlutterLocalNotificationsPlugin();

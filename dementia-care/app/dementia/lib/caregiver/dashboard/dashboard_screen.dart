@@ -1,510 +1,526 @@
-// app/lib/caregiver/dashboard/dashboard_screen.dart
+// lib/caregiver/dashboard/dashboard_screen.dart
+//
+// The patient screen every caregiver lands on after pairing: an overview plus
+// tabs for activity, location, alerts and the remaining care tools.
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../services/reminder_utils.dart';
+import '../activity/session_log_screen.dart';
 import '../alerts/alerts_screen.dart';
+import '../assistant/assistant_screen.dart';
 import '../common.dart';
+import '../data/caregiver_repository.dart';
+import '../location/location_log_screen.dart';
 import '../map/live_map_screen.dart';
-import '../settings/settings_screen.dart';
+import '../profile/patient_profile_editor_screen.dart';
+import '../settings/contacts_screen.dart';
+import '../settings/reminders_screen.dart';
+import '../settings/safe_zone_screen.dart';
 import '../trends/trends_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key, required this.pid});
+
   final String pid;
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: patientRef(pid).snapshots(),
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return Scaffold(
-              appBar: AppBar(),
-              body: const Center(child: Text('Could not load this patient.')));
-        }
-        if (!snap.hasData) {
-          return Scaffold(
-              appBar: AppBar(),
-              body: const Center(child: CircularProgressIndicator()));
-        }
-        final p = (snap.data!.data() as Map<String, dynamic>?) ?? {};
-        final name = (p['name'] as String?) ?? 'Patient';
-        final battery = (p['battery'] as num?)?.toInt();
-
-        return Scaffold(
-          backgroundColor: const Color(0xFFF4F6FA),
-          appBar: AppBar(
-            backgroundColor: const Color(0xFF1E3A8A),
-            foregroundColor: Colors.white,
-            title: Text(
-              name,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
-            ),
-            elevation: 0,
-          ),
-          body: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              // 1. Vibrant Patient Status Banner
-              Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blue.withAlpha(50),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: const BoxDecoration(
-                        color: Colors.white24,
-                        shape: BoxShape.circle,
-                      ),
-                      child: StatusDot(statusFor(p)),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'CURRENT STATUS',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.1,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Last seen ${timeAgo(toDate(p['lastSeen']))}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 17,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (battery != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: battery < 20
-                              ? Colors.red.shade700
-                              : Colors.white24,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              battery < 20
-                                  ? Icons.battery_alert
-                                  : Icons.battery_charging_full,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$battery%',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // 2. Urgent/Latest Alerts Card
-              _LatestAlerts(pid: pid),
-              const SizedBox(height: 16),
-
-              // 3. Colorful Today's Activity Card
-              _TodaySessions(pid: pid),
-              const SizedBox(height: 24),
-
-              const Text(
-                'Quick Navigation',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1E293B),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // 4. Colorful 2x2 Navigation Grid
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 1.45,
+    return DefaultTabController(
+      length: 5,
+      child: Scaffold(
+        backgroundColor: Cg.surface,
+        appBar: AppBar(
+          backgroundColor: Cg.navy,
+          foregroundColor: Colors.white,
+          title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: CaregiverRepo.patient(pid),
+            builder: (context, snap) {
+              final patient = snap.data?.data() ?? <String, dynamic>{};
+              final name = strOf(patient['name'], 'Patient');
+              final status = statusFor(patient);
+              return Row(
                 children: [
-                  _ColorfulNavTile(
-                    icon: Icons.notifications_active,
-                    label: 'All Alerts',
-                    subtitle: 'Safety & Zones',
-                    primaryColor: const Color(0xFFEA580C),
-                    bgColor: const Color(0xFFFFF7ED),
-                    onTap: () => _go(context, AlertsScreen(pid: pid)),
-                  ),
-                  _ColorfulNavTile(
-                    icon: Icons.map_rounded,
-                    label: 'Live Map',
-                    subtitle: 'GPS Location',
-                    primaryColor: const Color(0xFF0284C7),
-                    bgColor: const Color(0xFFF0F9FF),
-                    onTap: () => _go(context, LiveMapScreen(pid: pid)),
-                  ),
-                  _ColorfulNavTile(
-                    icon: Icons.show_chart_rounded,
-                    label: 'Trends',
-                    subtitle: 'Daily Activity',
-                    primaryColor: const Color(0xFF059669),
-                    bgColor: const Color(0xFFECFDF5),
-                    onTap: () => _go(context, TrendsScreen(pid: pid)),
-                  ),
-                  _ColorfulNavTile(
-                    icon: Icons.settings_rounded,
-                    label: 'Settings',
-                    subtitle: 'Care & Device',
-                    primaryColor: const Color(0xFF7C3AED),
-                    bgColor: const Color(0xFFF5F3FF),
-                    onTap: () => _go(context, SettingsScreen(pid: pid)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Center(
-                child: Text(
-                  disclaimer,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  void _go(BuildContext c, Widget w) =>
-      Navigator.of(c).push(MaterialPageRoute(builder: (_) => w));
-}
-
-class _ColorfulNavTile extends StatelessWidget {
-  const _ColorfulNavTile({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.primaryColor,
-    required this.bgColor,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final Color primaryColor;
-  final Color bgColor;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: bgColor,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: primaryColor.withAlpha(80), width: 1.5),
-          ),
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: primaryColor,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: Colors.white, size: 22),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: primaryColor,
+                  Flexible(
+                    child: Text(
+                      name,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: primaryColor.withAlpha(180),
-                      fontWeight: FontWeight.w500,
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: statusColor(status),
+                      shape: BoxShape.circle,
                     ),
                   ),
                 ],
-              ),
+              );
+            },
+          ),
+          bottom: const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            indicatorColor: Colors.white,
+            labelColor: Colors.white,
+            unselectedLabelColor: Color(0xFFBFD3F5),
+            labelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            tabs: [
+              Tab(text: 'Overview'),
+              Tab(text: 'Activity'),
+              Tab(text: 'Location'),
+              Tab(text: 'Alerts'),
+              Tab(text: 'More'),
             ],
           ),
+        ),
+        body: TabBarView(
+          children: [
+            _OverviewTab(pid: pid),
+            ActivityView(pid: pid),
+            LocationView(pid: pid),
+            AlertsView(pid: pid),
+            _MoreTab(pid: pid),
+          ],
         ),
       ),
     );
   }
 }
-class _TodaySessions extends StatelessWidget {
-  const _TodaySessions({required this.pid});
+
+// ---------------------------------------------------------------------------
+// Overview
+// ---------------------------------------------------------------------------
+
+class _OverviewTab extends StatelessWidget {
+  const _OverviewTab({required this.pid});
+
   final String pid;
 
   @override
   Widget build(BuildContext context) {
-    // Step 1: Check if we even have a valid patient ID
-    if (pid.isEmpty || pid == 'null') {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.red.shade200)),
-        child: const Text('❌ ERROR: Patient ID is missing or empty. The app doesn\'t know which patient to load.', 
-            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-      );
-    }
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: CaregiverRepo.patient(pid),
+      builder: (context, patientSnap) {
+        if (patientSnap.hasError) {
+          return _Message(text: friendlyError(patientSnap.error!));
+        }
+        if (!patientSnap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    // Step 2: Try a SIMPLE query first (no where, no orderBy) to test basic permissions
-    final simpleStream = patientRef(pid).collection('sessions').limit(5).snapshots();
+        final patient = patientSnap.data!.data() ?? <String, dynamic>{};
+        final location = PatientLocation.fromPatient(patient);
+        final battery = intOf(patient['battery']);
+        final seen = dateField(patient, 'lastSeen');
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF0D9488).withAlpha(70)),
-        boxShadow: [BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 8, offset: const Offset(0, 2))],
-      ),
-      padding: const EdgeInsets.all(16),
-      child: StreamBuilder<QuerySnapshot>(
-        stream: simpleStream,
-        builder: (context, snap) {
-          // 🔥 DIAGNOSTIC: If even the simple query fails, it's a Permissions or Path issue.
-          if (snap.hasError) {
-            final err = snap.error.toString();
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: CaregiverRepo.openAlerts(pid),
+          builder: (context, alertSnap) {
+            final openAlerts = (alertSnap.data?.docs ?? [])
+                .where((d) => isOpenAlert(d.data()))
+                .toList();
+            final status = statusFor(patient, openAlert: openAlerts.isNotEmpty);
+
+            return ListView(
+              padding: const EdgeInsets.all(16),
               children: [
-                const Text('Today\'s Cognitive Activity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  color: Colors.red.shade50,
+                _StatusBanner(
+                  patient: patient,
+                  status: status,
+                  seen: seen,
+                  battery: battery,
+                  location: location,
+                  openAlerts: openAlerts.length,
+                ),
+                const SizedBox(height: 14),
+                _TodayCard(pid: pid),
+                const SizedBox(height: 14),
+                _DailyBriefingCard(pid: pid),
+                const SizedBox(height: 14),
+                _ProfileSnapshot(pid: pid, patient: patient),
+                const SizedBox(height: 20),
+                Center(
                   child: Text(
-                    '❌ DATABASE ERROR:\n\n$err\n\n👉 FIX: Check your Firestore Rules. The caregiver must be in the "caregivers" array of this patient\'s document.',
-                    style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w600),
+                    disclaimer,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 11, color: Cg.muted),
                   ),
                 ),
               ],
             );
-          }
-          
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+          },
+        );
+      },
+    );
+  }
+}
 
-          final docs = snap.data!.docs;
-          
-          // Step 3: If simple query works, but we want to filter by today, let's check the data types
-          if (docs.isNotEmpty) {
-            final firstDoc = docs.first.data() as Map<String, dynamic>;
-            final ts = firstDoc['timestamp'];
-            
-            // Check if timestamp is a String (old broken code) or a real Timestamp (new fixed code)
-            if (ts is String) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Today\'s Cognitive Activity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    color: Colors.orange.shade50,
-                    child: const Text(
-                      '⚠️ DATA TYPE MISMATCH:\n\nYour database has old session data saved as a "String" instead of a "Timestamp".\n\n👉 FIX: Go to Firebase Console, delete the old "sessions" documents, and play a game on the patient app to generate a new, correctly formatted session.',
-                      style: TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              );
-            }
-          }
+class _StatusBanner extends StatelessWidget {
+  const _StatusBanner({
+    required this.patient,
+    required this.status,
+    required this.seen,
+    required this.battery,
+    required this.location,
+    required this.openAlerts,
+  });
 
-          // Step 4: If we got here, basic read works and data types are good. 
-          // Now let's try the actual filtered query for "Today".
-          final now = DateTime.now();
-          final start = DateTime(now.year, now.month, now.day);
-          final filteredStream = patientRef(pid)
-              .collection('sessions')
-              .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-              .orderBy('timestamp', descending: true)
-              .limit(10)
-              .snapshots();
+  final Map<String, dynamic> patient;
+  final PatientStatus status;
+  final DateTime? seen;
+  final int? battery;
+  final PatientLocation location;
+  final int openAlerts;
 
-          return StreamBuilder<QuerySnapshot>(
-            stream: filteredStream,
-            builder: (context, filteredSnap) {
-              if (filteredSnap.hasError) {
-                return Column(
+  @override
+  Widget build(BuildContext context) {
+    final name = strOf(patient['name'], 'Patient');
+    final preferred = strOf(patient['preferredName']);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Cg.navy, Cg.blue],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Today\'s Cognitive Activity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
-                    const SizedBox(height: 12),
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (preferred.isNotEmpty)
+                      Text(
+                        'Prefers “$preferred”',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Container(
-                      padding: const EdgeInsets.all(12),
-                      color: Colors.blue.shade50,
-                      child: const Text(
-                        '⚠️ INDEX REQUIRED:\n\nThe query needs a Firestore Index.\n\n👉 FIX: Look at your terminal for a "cloud_firestore/failed-precondition" error. It contains a clickable URL. Click it to create the index, wait 2 minutes, and restart the app.',
-                        style: TextStyle(color: Colors.blue, fontSize: 13, fontWeight: FontWeight.w600),
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: status == PatientStatus.alert
+                            ? const Color(0xFFFF8A8A)
+                            : (status == PatientStatus.ok
+                                ? const Color(0xFF7BE2A6)
+                                : const Color(0xFFFFD166)),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      statusLabel(status),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ],
-                );
-              }
-
-              final filteredDocs = filteredSnap.data?.docs ?? [];
-              final n = filteredDocs.length;
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: const Color(0xFFCCFBF1), borderRadius: BorderRadius.circular(12)),
-                        child: const Icon(Icons.sports_esports_rounded, color: Color(0xFF0F766E), size: 28),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Today\'s Cognitive Activity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF0F172A))),
-                            const SizedBox(height: 4),
-                            Text(
-                              n == 0 ? 'No memory games played yet today.' : '$n game session${n == 1 ? '' : 's'} completed today!',
-                              style: const TextStyle(fontSize: 14, color: Color(0xFF0F766E), fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (n > 0) ...[
-                    const Divider(height: 24, color: Color(0xFFE2E8F0)),
-                    for (final d in filteredDocs) _SessionTile(d.data() as Map<String, dynamic>),
-                  ],
-                ],
-              );
-            },
-          );
-        },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _BannerChip(icon: Icons.schedule, label: 'Seen ${timeAgo(seen)}'),
+              if (battery != null)
+                _BannerChip(
+                  icon: battery! <= 15
+                      ? Icons.battery_alert
+                      : Icons.battery_std,
+                  label: '$battery%',
+                ),
+              if (location.insideZone != null)
+                _BannerChip(
+                  icon: location.insideZone!
+                      ? Icons.shield
+                      : Icons.wrong_location,
+                  label: location.insideZone!
+                      ? 'Inside safe zone'
+                      : 'Outside safe zone',
+                ),
+              if (openAlerts > 0)
+                _BannerChip(
+                  icon: Icons.warning_amber_rounded,
+                  label: '$openAlerts open alert${openAlerts == 1 ? '' : 's'}',
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
 }
 
-class _SessionTile extends StatelessWidget {
-  const _SessionTile(this.data);
-  final Map<String, dynamic> data;
+class _BannerChip extends StatelessWidget {
+  const _BannerChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    final acc = (data['accuracy'] as num?)?.toDouble() ?? 0.0;
-    final pct = acc <= 1.0 ? (acc * 100).round() : acc.round();
-    final ms = (data['avgResponseMs'] as num?)?.toInt() ?? 0;
-    final ts = data['timestamp'];
-
-    // Dynamic color based on performance, matching the app's theme
-    final statusColor = pct >= 70 
-        ? const Color(0xFF059669) // Green
-        : (pct >= 40 ? const Color(0xFFD97706) : const Color(0xFFE11D48)); // Orange / Red
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(20),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: statusColor.withAlpha(25), // Subtle tint
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              Icons.sports_esports_rounded,
-              color: statusColor,
-              size: 22,
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TodayCard extends StatelessWidget {
+  const _TodayCard({required this.pid});
+
+  final String pid;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: CaregiverRepo.sessions(pid, limit: 50),
+      builder: (context, sessionSnap) {
+        final sessions = sessionSnap.data?.docs ?? [];
+        final today = sessions.where((d) {
+          final t = toDate(d.data()['timestamp']);
+          final now = DateTime.now();
+          return t != null &&
+              t.year == now.year &&
+              t.month == now.month &&
+              t.day == now.day;
+        }).toList();
+
+        double avg = 0;
+        if (today.isNotEmpty) {
+          avg = today.fold<double>(
+                0,
+                (sum, d) => sum + accuracyPct(d.data()['accuracy']),
+              ) /
+              today.length;
+        }
+
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: CaregiverRepo.reminders(pid),
+          builder: (context, reminderSnap) {
+            final reminderDocs = reminderSnap.data?.docs ??
+                const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+            final reminders = <Map<String, dynamic>>[
+              for (final d in reminderDocs) d.data(),
+            ];
+            final next = ReminderTime.next(reminders);
+
+            return InfoCard(
+              title: 'Today',
+              icon: Icons.today,
+              accent: Cg.teal,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _Line(
+                    icon: Icons.sports_esports,
+                    text: today.isEmpty
+                        ? 'No game session yet today.'
+                        : '${today.length} session${today.length == 1 ? '' : 's'} '
+                            'played · ${avg.round()}% average accuracy.',
+                  ),
+                  _Line(
+                    icon: Icons.alarm,
+                    text: next == null
+                        ? (reminders.isEmpty
+                            ? 'No reminders set.'
+                            : 'All reminders for today have passed.')
+                        : 'Next reminder ${ReminderTime.to12h(next['time'] as String?)} · '
+                            '${strOf(next['title'], 'reminder')}',
+                  ),
+                  _Line(
+                    icon: Icons.history,
+                    text: sessions.isEmpty
+                        ? 'No sessions recorded yet.'
+                        : 'Last session ${timeAgo(toDate(sessions.first.data()['timestamp']))}.',
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _DailyBriefingCard extends StatelessWidget {
+  const _DailyBriefingCard({required this.pid});
+
+  final String pid;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Cg.cardBorder),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Cg.violet.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.auto_awesome, color: Cg.violet),
+          ),
           const SizedBox(width: 12),
-          Expanded(
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${data['game'] ?? 'Game'} — Level ${data['level'] ?? '?'}',
-                  style: const TextStyle(
+                  'Care assistant',
+                  style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: Color(0xFF0F172A),
+                    color: Cg.ink,
                   ),
                 ),
-                const SizedBox(height: 4),
                 Text(
-                  '$pct% accuracy • ${ms}ms avg • ${data['language'] == 'hi' ? 'Hindi' : 'English'}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF64748B),
-                  ),
+                  'Ask for a briefing, alerts, games or trends. Answers come '
+                  'from the records, not from a diagnosis.',
+                  style: TextStyle(fontSize: 12, color: Cg.slate, height: 1.35),
                 ),
               ],
             ),
           ),
-          if (ts != null)
-            Text(
-              timeAgo(toDate(ts)), // Uses your existing common.dart helper
-              style: const TextStyle(
-                fontSize: 12,
-                color: Color(0xFF94A3B8),
-                fontWeight: FontWeight.w500,
+          const SizedBox(width: 8),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Cg.violet),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => CareAssistantScreen(pid: pid)),
+            ),
+            child: const Text('Ask'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileSnapshot extends StatelessWidget {
+  const _ProfileSnapshot({required this.pid, required this.patient});
+
+  final String pid;
+  final Map<String, dynamic> patient;
+
+  @override
+  Widget build(BuildContext context) {
+    final fields = <String, String>{
+      'Age': strOf(patient['age']),
+      'Blood group': strOf(patient['bloodGroup']),
+      'Allergies': strOf(patient['allergies']),
+      'Medications': strOf(patient['medications']),
+      'Doctor': [
+        strOf(patient['doctorName']),
+        strOf(patient['doctorPhone']),
+      ].where((v) => v.isNotEmpty).join(' · '),
+      'Primary caregiver': [
+        strOf(patient['caregiverName']),
+        strOf(patient['caregiverRelation']),
+      ].where((v) => v.isNotEmpty).join(' · '),
+    };
+
+    return InfoCard(
+      title: 'Care profile',
+      icon: Icons.badge_outlined,
+      trailing: TextButton(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => PatientProfileEditorScreen(pid: pid)),
+        ),
+        child: const Text('Edit'),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final entry in fields.entries)
+            if (entry.value.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 110,
+                      child: Text(
+                        entry.key,
+                        style: const TextStyle(fontSize: 12, color: Cg.slate),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        entry.value,
+                        style: const TextStyle(fontSize: 13, color: Cg.ink),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+          if (fields.values.every((v) => v.isEmpty))
+            const Text(
+              'The care profile is empty. Fill it in so the important details '
+              'are one tap away.',
+              style: TextStyle(fontSize: 12, color: Cg.slate),
             ),
         ],
       ),
@@ -512,129 +528,230 @@ class _SessionTile extends StatelessWidget {
   }
 }
 
-class _LatestAlerts extends StatelessWidget {
-  const _LatestAlerts({required this.pid});
+// ---------------------------------------------------------------------------
+// More
+// ---------------------------------------------------------------------------
+
+Future<void> _revokeAccess(BuildContext context, String pid) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Remove my access?'),
+      content: const Text(
+        'You will stop seeing this patient\'s status, sessions, location and '
+        'alerts. They can link you again later with a new code.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Cg.red),
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text('Remove access'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+
+  try {
+    await CaregiverRepo.revokeMyAccess(pid);
+    if (context.mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
+  } catch (e) {
+    if (context.mounted) snack(context, friendlyError(e));
+  }
+}
+
+class _MoreTab extends StatelessWidget {
+  const _MoreTab({required this.pid});
+
   final String pid;
 
   @override
   Widget build(BuildContext context) {
-    final stream = patientRef(pid)
-        .collection('alerts')
-        .orderBy('time', descending: true)
-        .limit(3)
-        .snapshots();
+    void push(Widget screen) => Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => screen));
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: stream,
-      builder: (context, snap) {
-        if (!snap.hasData) return const SizedBox.shrink();
-        final docs = snap.data!.docs;
-
-        // Friend's UI: Beautiful "All Quiet" state
-        if (docs.isEmpty) {
-          return Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFDCFCE7),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF22C55E).withAlpha(100)),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: const Row(
-              children: [
-                Icon(Icons.verified_user_rounded,
-                    color: Color(0xFF15803D), size: 28),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'All quiet & safe. No recent alerts.',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      color: Color(0xFF14532D),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        // Friend's UI: Beautiful Alert List state + Your logic for data mapping
-        return Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF1F2),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFF43F5E).withAlpha(100)),
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        InfoCard(
+          title: 'Care tools',
+          icon: Icons.apps,
+          child: Column(
+            children: [
+              _MoreTile(
+                icon: Icons.trending_up,
+                color: Cg.teal,
+                title: 'Engagement trends',
+                subtitle: 'Change from this patient\'s own baseline',
+                onTap: () => push(TrendsScreen(pid: pid)),
+              ),
+              _MoreTile(
+                icon: Icons.badge,
+                color: Cg.navy,
+                title: 'Patient profile',
+                subtitle: 'Care details and the change log',
+                onTap: () => push(PatientProfileEditorScreen(pid: pid)),
+              ),
+            ],
           ),
-          padding: const EdgeInsets.all(16),
+        ),
+        InfoCard(
+          title: 'Care settings',
+          icon: Icons.tune,
+          accent: Cg.amber,
+          child: Column(
+            children: [
+              _MoreTile(
+                icon: Icons.shield_outlined,
+                color: Cg.green,
+                title: 'Safe zone',
+                subtitle: 'Centre and radius of the safe area',
+                onTap: () => push(SafeZoneScreen(pid: pid)),
+              ),
+              _MoreTile(
+                icon: Icons.alarm,
+                color: Cg.amber,
+                title: 'Reminders',
+                subtitle: 'Medication, water, games',
+                onTap: () => push(RemindersScreen(pid: pid)),
+              ),
+              _MoreTile(
+                icon: Icons.contacts,
+                color: Cg.blue,
+                title: 'Contacts and doctor',
+                subtitle: 'Who the patient can call',
+                onTap: () => push(ContactsScreen(pid: pid)),
+              ),
+            ],
+          ),
+        ),
+        InfoCard(
+          title: 'Your access',
+          icon: Icons.lock_outline,
+          accent: Cg.red,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.warning_amber_rounded,
-                      color: Color(0xFFE11D48), size: 22),
-                  SizedBox(width: 8),
-                  Text(
-                    'Latest Safety Alerts',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: Color(0xFF881337),
-                    ),
-                  ),
-                ],
+              const Text(
+                'The patient controls location sharing from their own phone. '
+                'Removing your access only removes your account; other '
+                'caregivers keep theirs.',
+                style: TextStyle(fontSize: 12, color: Cg.slate, height: 1.4),
               ),
-              const Divider(color: Color(0xFFFECDD3)),
-              for (final d in docs.map((e) => e.data() as Map<String, dynamic>))
-                ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.white,
-                    child: Icon(
-                      alertIcon(d['type'] as String?), // Your helper
-                      color: alertColor(d['type'] as String?), // Your helper
-                      size: 20,
-                    ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Cg.red,
+                    side: const BorderSide(color: Cg.red),
+                    minimumSize: const Size(0, 46),
                   ),
-                  title: Text(
-                    alertLabel(d['type'] as String?), // Your helper
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E293B),
-                    ),
-                  ),
-                  subtitle: Text(timeAgo(toDate(d['time']))), // Your helper
-                  trailing: d['ackedAt'] == null
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE11D48),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'OPEN',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        )
-                      : const Text(
-                          'Resolved',
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
+                  onPressed: () => _revokeAccess(context, pid),
+                  icon: const Icon(Icons.link_off),
+                  label: const Text('Remove my access'),
                 ),
+              ),
             ],
           ),
-        );
-      },
+        ),
+        Center(
+          child: Text(
+            disclaimer,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, color: Cg.muted),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MoreTile extends StatelessWidget {
+  const _MoreTile({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.w600, color: Cg.ink),
+      ),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      trailing: const Icon(Icons.chevron_right, size: 18),
+      onTap: onTap,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+class _Line extends StatelessWidget {
+  const _Line({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: Cg.muted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 13, color: Cg.slate, height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Message extends StatelessWidget {
+  const _Message({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(text, textAlign: TextAlign.center),
+      ),
     );
   }
 }

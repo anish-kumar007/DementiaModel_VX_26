@@ -1,150 +1,196 @@
+// lib/caregiver/alerts/alerts_screen.dart
+//
+// 8) Alert log: every alert the patient app raised (SOS, safe zone, battery,
+// offline), newest first, with acknowledge.
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../common.dart'; // Assumes toDate() and timeAgo() are here
+import '../common.dart';
+import '../data/caregiver_repository.dart';
 import '../map/live_map_screen.dart';
-
-// --- Helpers (Defined here so push_handler can safely import them if needed) ---
-String alertLabel(String? type) {
-  switch (type) {
-    case 'sos': return 'SOS pressed';
-    case 'geofence': return 'Left the safe zone';
-    case 'offline': return 'Phone offline for a while';
-    case 'lowBattery': return 'Battery is low';
-    default: return 'Alert';
-  }
-}
-
-IconData alertIcon(String? type) {
-  switch (type) {
-    case 'sos': return Icons.sos;
-    case 'geofence': return Icons.wrong_location;
-    case 'offline': return Icons.wifi_off;
-    case 'lowBattery': return Icons.battery_alert;
-    default: return Icons.notifications;
-  }
-}
-
-Color alertColor(String? type) {
-  switch (type) {
-    case 'sos': return const Color(0xFFC62828);
-    case 'geofence': return const Color(0xFFEF6C00);
-    default: return const Color(0xFFF9A825);
-  }
-}
-// --------------------------------------------------------------------------------
 
 class AlertsScreen extends StatelessWidget {
   const AlertsScreen({super.key, required this.pid, this.highlightId});
+
   final String pid;
   final String? highlightId;
 
   @override
   Widget build(BuildContext context) {
-    final stream = patientRef(pid)
-        .collection('alerts')
-        .orderBy('time', descending: true)
-        .limit(50)
-        .snapshots();
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Alerts')),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: stream,
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return const Center(child: Text('Could not load alerts.'));
-          }
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          
-          final docs = snap.data!.docs;
-          if (docs.isEmpty) {
-            return const Center(child: Text('No alerts. All quiet.'));
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: docs.length,
-            itemBuilder: (_, i) {
-              final doc = docs[i];
-              return _AlertCard(
-                pid: pid,
-                doc: doc,
-                highlight: doc.id == highlightId,
-              );
-            },
-          );
-        },
+      backgroundColor: Cg.surface,
+      appBar: AppBar(
+        backgroundColor: Cg.navy,
+        foregroundColor: Colors.white,
+        title: const Text('Alerts'),
       ),
+      body: AlertsView(pid: pid, highlightId: highlightId),
     );
   }
 }
 
-class _AlertCard extends StatelessWidget {
-  const _AlertCard({required this.pid, required this.doc, required this.highlight});
+class AlertsView extends StatefulWidget {
+  const AlertsView({super.key, required this.pid, this.highlightId});
+
   final String pid;
-  final QueryDocumentSnapshot<Map<String, dynamic>> doc;
-  final bool highlight;
+  final String? highlightId;
 
-  Future<void> _ack(BuildContext context) async {
+  @override
+  State<AlertsView> createState() => _AlertsViewState();
+}
+
+class _AlertsViewState extends State<AlertsView> {
+  bool _onlyOpen = false;
+
+  Future<void> _ack(String alertId) async {
     try {
-      // FUNCTIONAL FIX: Get UID directly from FirebaseAuth to guarantee it works
-      final currentUid = FirebaseAuth.instance.currentUser?.uid;
-      if (currentUid == null) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('You must be logged in to acknowledge.')),
-          );
-        }
-        return;
-      }
-
-      await doc.reference.update({
-        'ackedBy': currentUid,
-        'ackedAt': FieldValue.serverTimestamp(),
-      });
-      
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Alert acknowledged'), backgroundColor: Colors.green),
-        );
-      }
+      await CaregiverRepo.ackAlert(widget.pid, alertId);
+      if (!mounted) return;
+      snack(context, 'Alert acknowledged.');
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not acknowledge: ${e.toString()}')),
-        );
-      }
+      if (!mounted) return;
+      snack(context, friendlyError(e));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: CaregiverRepo.alerts(widget.pid),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                friendlyError(snap.error!),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final all = snap.data!.docs;
+        final open = all.where((d) => isOpenAlert(d.data())).toList();
+        final visible = _onlyOpen ? open : all;
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      open.isEmpty
+                          ? 'All alerts acknowledged'
+                          : '${open.length} open alert${open.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: open.isEmpty ? Cg.green : Cg.red,
+                      ),
+                    ),
+                  ),
+                  SegmentedButton<bool>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(value: false, label: Text('All')),
+                      ButtonSegment(value: true, label: Text('Open')),
+                    ],
+                    selected: {_onlyOpen},
+                    onSelectionChanged: (value) =>
+                        setState(() => _onlyOpen = value.first),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: visible.isEmpty
+                  ? ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        EmptyState(
+                          icon: Icons.verified_user,
+                          message: _onlyOpen
+                              ? 'Nothing open right now'
+                              : 'No alerts yet',
+                          hint: _onlyOpen
+                              ? 'Every recorded alert has been acknowledged.'
+                              : 'SOS and safe-zone alerts from the patient app '
+                                  'appear here.',
+                        ),
+                      ],
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: visible.length,
+                      itemBuilder: (context, index) {
+                        final doc = visible[index];
+                        return _AlertCard(
+                          pid: widget.pid,
+                          doc: doc,
+                          highlight: doc.id == widget.highlightId,
+                          onAck: () => _ack(doc.id),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AlertCard extends StatelessWidget {
+  const _AlertCard({
+    required this.pid,
+    required this.doc,
+    required this.highlight,
+    required this.onAck,
+  });
+
+  final String pid;
+  final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+  final bool highlight;
+  final VoidCallback onAck;
+
+  @override
+  Widget build(BuildContext context) {
     final d = doc.data();
     final type = d['type'] as String?;
-    final acked = d['ackedAt'] != null;
-    final loc = d['location'] as Map<String, dynamic>?;
-    // FUNCTIONAL FIX: Safe null checking for nested map values
-    final hasLoc = loc != null && loc['lat'] != null && loc['lng'] != null;
+    final open = isOpenAlert(d);
+    final color = open ? alertColor(type) : Cg.muted;
+    final location = parseLatLng(d['location']);
 
-    return Card(
-      elevation: highlight ? 4 : 1,
-      shape: highlight
-          ? RoundedRectangleBorder(
-              side: BorderSide(color: alertColor(type) ?? Colors.grey, width: 3),
-              borderRadius: BorderRadius.circular(12))
-          : RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: highlight ? alertColor(type) : Cg.cardBorder,
+          width: highlight ? 2 : 1,
+        ),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(alertIcon(type), color: alertColor(type), size: 32),
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(alertIcon(type), color: color, size: 22),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -152,48 +198,90 @@ class _AlertCard extends StatelessWidget {
                     children: [
                       Text(
                         alertLabel(type),
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: Cg.ink,
+                        ),
                       ),
-                      // FUNCTIONAL FIX: Safe fallback if 'time' is missing
-                      Text(timeAgo(toDate(d['time']) ?? DateTime.now())),
+                      Text(
+                        dateTimeLabel(alertTime(d)),
+                        style: const TextStyle(fontSize: 12, color: Cg.slate),
+                      ),
                     ],
                   ),
                 ),
+                StatusPill(
+                  status: open ? PatientStatus.alert : PatientStatus.ok,
+                  label: open ? 'OPEN' : 'Acknowledged',
+                ),
               ],
             ),
-            const SizedBox(height: 12),
-            if (acked)
-              Text(
-                'Acknowledged ${timeAgo(toDate(d['ackedAt']) ?? DateTime.now())}',
-                style: const TextStyle(color: Color(0xFF2E7D32), fontWeight: FontWeight.w500),
-              )
-            else
-              Row(
-                children: [
+            const SizedBox(height: 10),
+            Text(
+              alertMessage(d),
+              style: const TextStyle(fontSize: 13, color: Cg.slate, height: 1.35),
+            ),
+            if (numOf(d['distanceMeters']) != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '${numOf(d['distanceMeters'])!.round()} m from the safe zone '
+                  'centre (limit ${numOf(d['radiusMeters'])?.round() ?? '?'} m).',
+                  style: const TextStyle(fontSize: 12, color: Cg.muted),
+                ),
+              ),
+            if (!open && d['ackedBy'] != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Acknowledged ${timeAgo(toDate(d['ackedAt']))}',
+                  style: const TextStyle(fontSize: 12, color: Cg.green),
+                ),
+              ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (open)
                   Expanded(
-                    child: SizedBox(
-                      height: 48,
-                      child: FilledButton(
-                        onPressed: () => _ack(context),
-                        child: const Text('Acknowledge', style: TextStyle(fontSize: 16)),
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Cg.navy,
+                        minimumSize: const Size(0, 44),
                       ),
+                      onPressed: onAck,
+                      icon: const Icon(Icons.check, size: 18),
+                      label: const Text('Acknowledge'),
                     ),
                   ),
-                  if (hasLoc) ...[
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      height: 48,
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.map),
-                        label: const Text('Map'),
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => LiveMapScreen(pid: pid)),
-                        ),
+                if (location != null) ...[
+                  if (open) const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 44),
                       ),
+                      onPressed: () {
+                        // Inside the dashboard, the Location tab is the one
+                        // place with the map and its history.
+                        final tabs = DefaultTabController.maybeOf(context);
+                        if (tabs != null) {
+                          tabs.animateTo(2);
+                        } else {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => LiveMapScreen(pid: pid),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.map, size: 18),
+                      label: const Text('Map'),
                     ),
-                  ],
+                  ),
                 ],
-              ),
+              ],
+            ),
           ],
         ),
       ),

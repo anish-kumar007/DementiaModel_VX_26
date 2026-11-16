@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../services/patient_writes.dart';
 import '../services/reminder_notification_service.dart';
 
 class PatientProfileScreen extends StatefulWidget {
@@ -96,25 +97,53 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
     if (_pid.isEmpty) return;
     setState(() => _isSaving = true);
 
+    final values = <String, dynamic>{
+      'name': _nameCtrl.text.trim(),
+      'preferredName': _preferredNameCtrl.text.trim(),
+      'age': _ageCtrl.text.trim(),
+      'bloodGroup': _bloodGroupCtrl.text.trim(),
+      'languages': _languagesCtrl.text.trim(),
+      'homeAddress': _homeAddressCtrl.text.trim(),
+      'diagnosis': _diagnosisCtrl.text.trim(),
+      'allergies': _allergiesCtrl.text.trim(),
+      'medications': _medicationsCtrl.text.trim(),
+      'doctorName': _doctorNameCtrl.text.trim(),
+      'doctorPhone': _doctorPhoneCtrl.text.trim(),
+      'caregiverName': _caregiverNameCtrl.text.trim(),
+      'caregiverRelation': _caregiverRelationCtrl.text.trim(),
+      'caregiverPhone': _caregiverPhoneCtrl.text.trim(),
+      'comfortPreferences': _comfortNotesCtrl.text.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': FirebaseAuth.instance.currentUser?.uid,
+    };
+
     try {
-      await FirebaseFirestore.instance.collection('patients').doc(_pid).set({
-        'name': _nameCtrl.text.trim(),
-        'preferredName': _preferredNameCtrl.text.trim(),
-        'age': _ageCtrl.text.trim(),
-        'bloodGroup': _bloodGroupCtrl.text.trim(),
-        'languages': _languagesCtrl.text.trim(),
-        'homeAddress': _homeAddressCtrl.text.trim(),
-        'diagnosis': _diagnosisCtrl.text.trim(),
-        'allergies': _allergiesCtrl.text.trim(),
-        'medications': _medicationsCtrl.text.trim(),
-        'doctorName': _doctorNameCtrl.text.trim(),
-        'doctorPhone': _doctorPhoneCtrl.text.trim(),
-        'caregiverName': _caregiverNameCtrl.text.trim(),
-        'caregiverRelation': _caregiverRelationCtrl.text.trim(),
-        'caregiverPhone': _caregiverPhoneCtrl.text.trim(),
-        'comfortPreferences': _comfortNotesCtrl.text.trim(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      // Keep a change log so a caregiver can see edits to the profile.
+      final before = (await FirebaseFirestore.instance
+                  .collection('patients')
+                  .doc(_pid)
+                  .get())
+              .data() ??
+          {};
+      final changes = <String, dynamic>{};
+      values.forEach((key, value) {
+        if (key == 'updatedAt' || key == 'updatedBy') return;
+        if ('${before[key] ?? ''}' != '$value') {
+          changes[key] = {'from': before[key], 'to': value};
+        }
+      });
+
+      await FirebaseFirestore.instance
+          .collection('patients')
+          .doc(_pid)
+          .set(values, SetOptions(merge: true));
+
+      await PatientWrites.logProfileChange(
+        changes: changes,
+        editorUid: FirebaseAuth.instance.currentUser?.uid ?? _pid,
+        editorName: values['name'] as String? ?? 'Patient',
+        editorRole: 'patient',
+      );
 
       if (!mounted) return;
       setState(() {
