@@ -6,6 +6,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../services/patient_writes.dart';
+
 class ConsentAndGeofenceScreen extends StatefulWidget {
   final bool isHindi;
   final String? patientId;
@@ -171,23 +173,17 @@ class _ConsentAndGeofenceScreenState extends State<ConsentAndGeofenceScreen> {
   Future<void> _writeGeofenceAlertToCaregiver() async {
     if (_pid.isEmpty) return;
     final pos = _livePatientPos ?? _safeZoneCenter;
-    await FirebaseFirestore.instance
-        .collection('patients')
-        .doc(_pid)
-        .collection('alerts')
-        .add({
-      'type': 'geofence',
-      'status': 'unread',
-      'message': 'Patient stepped outside the designated Safe Zone.',
-      'distanceMeters': _lastDistanceMeters?.round(),
-      'radiusMeters': _safeZoneRadiusM.round(),
-      if (pos != null)
-        'location': {
-          'lat': pos.latitude,
-          'lng': pos.longitude,
-        },
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    await PatientWrites.logAlert(
+      type: 'geofence',
+      severity: 'high',
+      message: 'The patient moved outside the safe zone.',
+      lat: pos?.latitude,
+      lng: pos?.longitude,
+      extra: {
+        'distanceMeters': _lastDistanceMeters?.round(),
+        'radiusMeters': _safeZoneRadiusM.round(),
+      },
+    );
   }
 
   Future<void> _runDemoGeofenceTest(bool simulateOutside) async {

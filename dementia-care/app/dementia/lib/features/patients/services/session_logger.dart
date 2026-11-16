@@ -3,22 +3,26 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 class SessionLogger {
-  /// Logs game session metrics matching Firestore schema:
+  /// Logs game session metrics matching the shared Firestore schema:
   /// patients/{pid}/sessions/{id} ->
-  /// {game, level, accuracy, avgResponseMs, language, timestamp}
+  /// {game, level, accuracy, avgResponseMs, language, timestamp,
+  ///  score?, rounds?, durationMs?}
   static Future<void> logSession({
     required String game,
     required int level,
     required double accuracy,
     required int avgResponseMs,
     required String language,
+    int? score,
+    int? rounds,
+    int? durationMs,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       if (kDebugMode) debugPrint('[SESSION LOG] Skipped: No authenticated user');
       return;
     }
-    
+
     final patientId = user.uid; // The patient's Auth UID is their pid
 
     final sessionData = <String, dynamic>{
@@ -27,9 +31,11 @@ class SessionLogger {
       'accuracy': double.parse(accuracy.toStringAsFixed(2)),
       'avgResponseMs': avgResponseMs,
       'language': language,
-      // CRITICAL FIX: Must be a Firestore Timestamp, not a String.
-      // The caregiver dashboard filters with `where('timestamp', isGreaterThanOrEqualTo: Timestamp...)`
-      'timestamp': Timestamp.fromDate(DateTime.now().toUtc()),
+      // Firestore Timestamp: the caregiver screens sort and filter on this.
+      'timestamp': Timestamp.fromDate(DateTime.now()),
+      if (score != null) 'score': score,
+      if (rounds != null) 'rounds': rounds,
+      if (durationMs != null) 'durationMs': durationMs,
     };
 
     try {
@@ -39,9 +45,9 @@ class SessionLogger {
           .doc(patientId)
           .collection('sessions')
           .add(sessionData);
-          
+
       if (kDebugMode) {
-        debugPrint('[SESSION LOG] Successfully queued for patient $patientId');
+        debugPrint('[SESSION LOG] Queued for patient $patientId');
       }
     } catch (e) {
       if (kDebugMode) {

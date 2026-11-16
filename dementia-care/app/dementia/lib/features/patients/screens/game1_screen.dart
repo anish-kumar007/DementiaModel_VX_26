@@ -340,6 +340,8 @@ class _Game1ScreenState extends State<Game1Screen> {
       accuracy: accuracy,
       avgResponseMs: avgMs,
       language: widget.isHindi ? 'hi' : 'en',
+      rounds: _totalTurns,
+      durationMs: _sessionStopwatch.elapsedMilliseconds,
     );
   }
 

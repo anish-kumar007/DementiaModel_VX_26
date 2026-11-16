@@ -1,21 +1,14 @@
-import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
-class VoiceAssistantResponse {
-  final String reply;
-  final String action; // 'none' or 'call:<name>'
+import '../../../services/patient_writes.dart';
+import 'companion_brain.dart';
 
-  const VoiceAssistantResponse({
-    required this.reply,
-    this.action = 'none',
-  });
-}
-
+/// Speaks and answers for the patient. Answers are produced on the device by
+/// [CompanionBrain] (instant, offline, no API key). Each turn is mirrored into
+/// patients/{pid}/assistantChats so a caregiver can see what was asked.
 class VoiceAssistantService {
   static final FlutterTts _tts = FlutterTts();
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   static Future<void> initialize({bool isHindi = false}) async {
     await setLanguage(isHindi: isHindi);
@@ -27,116 +20,34 @@ class VoiceAssistantService {
     await _tts.setVolume(1.0);
   }
 
-  static Future<VoiceAssistantResponse> getAiCompanionResponse({
-    required String userQuery,
-    required String uid,
-    bool isHindi = false,
+  static Future<CompanionReply> ask({
+    required String query,
+    required CompanionContext context,
+    required bool isHindi,
   }) async {
-    final fallback = VoiceAssistantResponse(
-      reply: isHindi
-          ? 'मैं यहीं आपके साथ हूँ। सब ठीक है, आप आराम करें।'
-          : 'I am right here with you. Everything is alright, take a gentle breath.',
-      action: 'none',
-    );
+    final reply = CompanionBrain.reply(query, context: context, isHindi: isHindi);
 
     try {
-      // 1. Write request to Firestore adhering strictly to security rules
-      final requestId = await _sendRequestToAI(
-        uid: uid,
-        text: userQuery,
+      await PatientWrites.logAssistantTurn(
+        question: query,
+        reply: reply.text,
         language: isHindi ? 'hi' : 'en',
       );
-
-      // 2. Wait for Python backend to process and add the 'reply' field
-      final result = await _waitForAIResponse(requestId);
-      
-      final rawReply = result.reply.trim();
-      String action = 'none';
-      
-      if (rawReply.toLowerCase().startsWith('call:')) {
-        action = rawReply; 
-      }
-
-      return VoiceAssistantResponse(
-        reply: rawReply,
-        action: action,
-      );
-
     } catch (e) {
-      if (kDebugMode) debugPrint('[AI CHAT] Error or Timeout: $e');
-      return fallback;
+      if (kDebugMode) debugPrint('[ASSISTANT] Could not log the turn: $e');
     }
-  }
 
-  /// Matches the exact keys allowed by Firestore rules: ['uid', 'text', 'language', 'history', 'createdAt']
-  static Future<String> _sendRequestToAI({
-    required String uid,
-    required String text,
-    required String language,
-  }) async {
-    final docRef = await _firestore.collection('assistantRequests').add({
-      'uid': uid,
-      'text': text,
-      'language': language,
-      'history': [], // Required by rule's hasOnly check
-      'createdAt': FieldValue.serverTimestamp(), // Required by rule (instead of timestamp)
-    });
-    return docRef.id;
-  }
-
-  static Future<VoiceAssistantResponse> _waitForAIResponse(String requestId) async {
-    final completer = Completer<VoiceAssistantResponse>();
-    StreamSubscription<DocumentSnapshot>? sub;
-    Timer? timer;
-
-    sub = _firestore
-        .collection('assistantRequests')
-        .doc(requestId)
-        .snapshots()
-        .listen((snapshot) {
-      if (!snapshot.exists) return;
-      final data = snapshot.data();
-      if (data == null) return;
-
-      // When Python backend writes the 'reply' field, consider it completed
-      if (data.containsKey('reply') && data['reply'] != null) {
-        if (!completer.isCompleted) {
-          completer.complete(
-            VoiceAssistantResponse(
-              reply: data['reply'].toString(),
-            ),
-          );
-        }
-      } else if (data.containsKey('error') && data['error'] != null) {
-        if (!completer.isCompleted) {
-          completer.completeError(
-            Exception(data['error'].toString()),
-          );
-        }
-      }
-    });
-
-    timer = Timer(const Duration(seconds: 15), () {
-      if (!completer.isCompleted) {
-        completer.completeError(TimeoutException('AI response timed out'));
-      }
-    });
-
-    try {
-      final result = await completer.future;
-      return result;
-    } finally {
-      timer?.cancel();
-      await sub?.cancel();
-    }
+    return reply;
   }
 
   static Future<void> speak(String text) async {
     await _tts.stop();
     final hasHindiScript = RegExp(r'[\u0900-\u097F]').hasMatch(text);
-    final isHindi = hasHindiScript || text.contains('मैं') || text.contains('नमस्ते') || text.contains('आप');
-    
-    await _tts.setLanguage(isHindi ? "hi-IN" : "en-US");
+    await _tts.setLanguage(hasHindiScript ? 'hi-IN' : 'en-US');
     await _tts.speak(text);
+  }
+
+  static Future<void> stopSpeaking() async {
+    await _tts.stop();
   }
 }

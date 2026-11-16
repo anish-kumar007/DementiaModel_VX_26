@@ -315,6 +315,8 @@ class _Game2ScreenState extends State<Game2Screen> {
       accuracy: accuracy,
       avgResponseMs: avgMs,
       language: widget.isHindi ? 'hi' : 'en',
+      score: _points,
+      rounds: _totalTaps,
     );
   }
 

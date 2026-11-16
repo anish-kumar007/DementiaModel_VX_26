@@ -41,10 +41,11 @@ Future<LinkResult> requestLink(String code) async {
     });
     print('✅ [CAREGIVER] Request created. Waiting for patient...');
 
+    // The patient has 45 s to tap approve on their own phone.
     final answer = await reqRef
         .snapshots()
         .firstWhere((s) => (s.data()?['status'] ?? 'pending') != 'pending')
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 45));
 
     final data = answer.data()!;
 
